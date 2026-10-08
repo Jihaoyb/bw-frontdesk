@@ -89,8 +89,9 @@ Also: exhaustion test now covers policy browsing and parent/staff replies at exh
 - Request cards show the *current* known policy text (live lookup), while answer evidence is a snapshot. After the K2 republish, the old request card displayed the updated list. Design choice, noted here rather than changed.
 - `/api/requests` stores the question text sent by the client; origin and known policy are derived server-side. A hand-crafted call can label a request with different text than the saved inquiry.
 - Grounding checks are small live samples, not measured success rates.
-- The I27 prompt fix and the audit fixes above are verified locally and in the suite; the hosted retest of the deployed revision (I27 answered, loop still green) is recorded under human sign-off below once pushed.
+- Hosted retest of the deployed revision (a3bef91): I27 answered from K3 ("fever-free for 24 hours without fever-reducing medicine"), both from the reviewer's phone and via the API; request page shows "Conversation before this request" and "No knowledge update yet". Fever gap closed.
 - Hosted screens were checked in desktop Chrome; the hand-held mobile pass is still the human sign-off.
 
-### Human sign-off (pending)
-Open https://bw-frontdesk.vercel.app/parent on a phone and run the loop above; confirm sources are readable, status vs delivery is clear, and the writeup reads right. Record the result here.
+### Human sign-off
+- Oct 7, 2026, reviewer on a phone against the deployed revision: I27 returned the illness policy answer ("A child with a fever should stay home. They may return after being fever-free for 24 hours without fever-reducing medicine.") with its source. Recorded as the hosted I27 pass.
+- Still to confirm on the phone: the full missing-holiday loop (handoff → reply → publish → sourced answer), readable source panels, and the writeup. Record the result here when done.
