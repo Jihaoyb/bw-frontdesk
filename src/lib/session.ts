@@ -63,6 +63,7 @@ export async function resetSessionContent(sessionId: string): Promise<DemoSessio
     await client.query("BEGIN");
     const existing = await client.query("SELECT id FROM demo_sessions WHERE id = $1 FOR UPDATE", [sessionId]);
     if (!existing.rowCount) throw new Error("unknown session");
+    await client.query("DELETE FROM conversations WHERE session_id = $1", [sessionId]); // cascades messages, requests
     await client.query("DELETE FROM knowledge_entries WHERE session_id = $1", [sessionId]);
     await seedSessionContent(client, sessionId);
     const updated = await client.query(

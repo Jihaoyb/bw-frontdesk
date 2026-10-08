@@ -3,10 +3,21 @@ import { centerConfig } from "@/lib/center-config";
 
 export type Perspective = "parent" | "operator";
 
-export function PerspectiveNav({ active }: { active: Perspective }) {
+const subnav: Record<Perspective, { href: string; label: string }[]> = {
+  parent: [
+    { href: "/parent", label: "Conversation" },
+    { href: "/parent/policies", label: "Center policies" },
+  ],
+  operator: [
+    { href: "/operator/inbox", label: "Inbox" },
+    { href: "/operator", label: "Knowledge" },
+  ],
+};
+
+export function PerspectiveNav({ active, current }: { active: Perspective; current?: string }) {
   const tab = (p: Perspective, label: string) => (
     <Link
-      href={`/${p}`}
+      href={subnav[p][0].href}
       aria-current={active === p ? "page" : undefined}
       className={
         "flex-1 text-center rounded-md px-3 py-2 text-sm font-medium " +
@@ -24,6 +35,13 @@ export function PerspectiveNav({ active }: { active: Perspective }) {
         <nav aria-label="Perspective" className="mt-3 flex gap-2">
           {tab("parent", "Parent")}
           {tab("operator", "Operator")}
+        </nav>
+        <nav aria-label="Section" className="mt-2 flex gap-4 text-sm">
+          {subnav[active].map((s) => (
+            <Link key={s.href} href={s.href} className={current === s.href ? "font-semibold underline" : "text-stone-600"}>
+              {s.label}
+            </Link>
+          ))}
         </nav>
         <p className="mt-2 text-xs text-stone-500">
           Switching perspective is a demo convenience for reviewers, not a login. Both views show the same demo session.
