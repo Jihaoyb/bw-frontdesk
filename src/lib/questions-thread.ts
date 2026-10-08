@@ -9,7 +9,7 @@ export function inquiryByQuestion(inquiries: Inquiry[]): Map<string, Inquiry> {
 
 /** How many questions ended in each outcome. */
 export function outcomeCounts(inquiries: Inquiry[]): Record<InquiryOutcome, number> {
-  const out: Record<InquiryOutcome, number> = { pending: 0, answered: 0, clarified: 0, handoff_offered: 0, sensitive: 0, failed: 0, staff_requested: 0 };
+  const out: Record<InquiryOutcome, number> = { chat: 0, pending: 0, answered: 0, clarified: 0, handoff_offered: 0, sensitive: 0, failed: 0, staff_requested: 0 };
   for (const i of inquiries) out[i.outcome] += 1;
   return out;
 }

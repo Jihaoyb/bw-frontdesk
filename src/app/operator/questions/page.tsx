@@ -9,7 +9,7 @@ import { getActiveSession } from "@/lib/request-session";
 
 export const dynamic = "force-dynamic";
 
-const outcomeOrder: InquiryOutcome[] = ["answered", "clarified", "handoff_offered", "staff_requested", "sensitive", "failed", "pending"];
+const outcomeOrder: InquiryOutcome[] = ["chat", "answered", "clarified", "handoff_offered", "staff_requested", "sensitive", "failed", "pending"];
 
 // Issue 016: the session's questions as the conversation the parent saw, read
 // only, with an outcome beside each handled question. Phone = the thread;

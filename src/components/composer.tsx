@@ -1,18 +1,35 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useRef, useState, useTransition } from "react";
+import { useRef, useState, useTransition, type ReactNode } from "react";
+import { smallTalkReply } from "@/lib/small-talk";
+import { MessageBubble } from "./message-bubble";
+import { HandoffOffer } from "./handoff-offer";
+import type { Evidence } from "@/lib/inquiries";
 import type { UsageSnapshot } from "@/lib/usage";
 import { DeliveryStatus, type Delivery } from "./delivery-status";
 import { keyFacts, shouldSendOnEnter } from "@/lib/compose-keys";
+
+type ImmediateAnswer = {
+  status: "chat" | "answered" | "clarified" | "handoff_offered" | "sensitive";
+  questionMessageId: string;
+  message: { id: string; body: string; createdAt: string };
+  sources: (Omit<Evidence, "publishedAt"> & { publishedAt: string | null })[];
+  request: { id: string } | null;
+};
+type ReceivedTurn = { submissionId: string; question: string; answer: ImmediateAnswer };
 
 type Mode = "ask" | "staff";
 
 // One composer, two destinations, each named on its button. "Ask AI" asks the assistant (counted
 // against the allowance). "Ask staff" saves a staff request directly and is
 // never counted. Delivery state is about the save, not about staff progress.
-export function Composer({ maxChars, usage, aiEnabled }: { maxChars: number; usage: UsageSnapshot; aiEnabled: boolean }) {
+export function Composer({ maxChars, usage, aiEnabled, savedMessageIds, children, footer }: { maxChars: number; usage: UsageSnapshot; aiEnabled: boolean; savedMessageIds: string[]; children: ReactNode; footer: ReactNode }) {
   const router = useRouter();
+  const [received, setReceived] = useState<ReceivedTurn[]>([]);
+  const [latestUsage, setLatestUsage] = useState(usage);
+  const displayedUsage = latestUsage.sessionUsed > usage.sessionUsed ? latestUsage : usage;
+  const savedIds = new Set(savedMessageIds);
   const [text, setText] = useState("");
   const [submissionId, setSubmissionId] = useState<string | null>(null);
   const [delivery, setDelivery] = useState<Delivery>({ kind: "idle" });
@@ -26,14 +43,16 @@ export function Composer({ maxChars, usage, aiEnabled }: { maxChars: number; usa
   const showPending = pending !== null && (delivery.kind === "saving" || delivery.kind === "unconfirmed" || refreshing);
   const ref = useRef<HTMLTextAreaElement>(null);
 
-  const exhausted = usage.sessionUsed >= usage.sessionLimit || usage.dailyUsed >= usage.dailyLimit;
+  const exhausted = displayedUsage.sessionUsed >= displayedUsage.sessionLimit || displayedUsage.dailyUsed >= displayedUsage.dailyLimit;
   const aiAvailable = aiEnabled && !exhausted;
+  const canAsk = aiAvailable || smallTalkReply(text) !== null;
   const busy = delivery.kind === "saving";
   // While a save is unconfirmed the text is locked to the submission id that
   // may already be saved: Retry replays it; Edit instead starts a new one.
   const unconfirmed = delivery.kind === "unconfirmed";
 
   async function send(mode: Mode) {
+    if (busy) return;
     const trimmed = text.trim();
     if (!trimmed) return setDelivery({ kind: "rejected", reason: "Type a question first." });
     if (trimmed.length > maxChars) return setDelivery({ kind: "rejected", reason: `Keep it under ${maxChars} characters.` });
@@ -64,7 +83,17 @@ export function Composer({ maxChars, usage, aiEnabled }: { maxChars: number; usa
         setPending(null);
         return setDelivery({ kind: "idle" });
       }
-      if (res.ok) { done(); return; }
+      if (res.ok) {
+        if (data.usage) setLatestUsage(data.usage);
+        if (mode === "ask" && data.message && data.questionMessageId) {
+          // Only show the API's persisted, validated result. Keep it until its
+          // message id arrives in server props, even if background refresh is slow.
+          setReceived((turns) => [...turns.filter((t) => t.submissionId !== id && !savedIds.has(t.answer.message.id)),
+            { submissionId: id, question: trimmed, answer: data as ImmediateAnswer }]);
+          setPending(null);
+        }
+        done(); return;
+      }
       setDelivery({ kind: "unconfirmed" });
     } catch {
       setDelivery({ kind: "unconfirmed" });
@@ -89,47 +118,58 @@ export function Composer({ maxChars, usage, aiEnabled }: { maxChars: number; usa
   }
 
   return (
-    <div className="sticky bottom-0 z-10 -mx-4 bg-canvas/90 px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-2 backdrop-blur">
-      {showPending && pending && <PendingTurn text={pending.text} mode={pending.mode} unconfirmed={unconfirmed} />}
-      {notice && <p role="status" className="mb-2 rounded-2xl bg-person-soft px-3.5 py-2 text-sm text-person-deep">{notice}</p>}
-      {!aiAvailable && !notice && (
-        <p className="mb-2 rounded-2xl bg-surface px-3.5 py-2 text-sm text-ink-2 ring-1 ring-line">
-          {aiEnabled ? "The AI allowance for this demo is used up." : "AI answers are turned off for this demo right now."} Policies and staff messaging still work.
-        </p>
-      )}
-      <form onSubmit={(e) => { e.preventDefault(); void send(aiAvailable ? "ask" : "staff"); }} aria-labelledby="ask"
-        className="flex items-end gap-2 rounded-[26px] border border-line bg-surface py-1.5 pl-4 pr-1.5 shadow-float transition focus-within:border-brand focus-within:ring-2 focus-within:ring-brand/30">
-        <label htmlFor="question" id="ask" className="sr-only">Ask the AI assistant or send a message to school staff</label>
-        <textarea
-          id="question" ref={ref} name="question" value={text} rows={1} disabled={busy || unconfirmed} maxLength={maxChars * 2} data-shortcut-focus
-          onChange={(e) => setText(e.target.value)}
-          onKeyDown={(e) => { if (shouldSendOnEnter(keyFacts(e))) { e.preventDefault(); void send(aiAvailable ? "ask" : "staff"); } }}
-          placeholder={aiAvailable ? "Ask about hours, illness, meals…" : "Write a message for school staff"}
-          className="max-h-32 min-h-10 w-full resize-none bg-transparent py-2 text-base leading-relaxed placeholder:text-ink-3 focus:outline-none"
-        />
-        {unconfirmed ? (
-          <button type="button" onClick={editInstead} className="btn-link mb-0.5 mr-2">Edit instead</button>
-        ) : aiAvailable ? (
-          <button type="submit" disabled={busy} aria-label={busy ? "Sending" : "Ask AI"} title="Ask AI"
-            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-ink text-white transition hover:bg-ink-2 disabled:bg-line focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2">
-            <svg aria-hidden width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 19V5" /><path d="M5 12l7-7 7 7" /></svg>
-          </button>
-        ) : (
-          <button type="submit" disabled={busy} className="btn-person mb-0 h-10 min-h-0">{busy ? "Sending…" : "Send to school staff"}</button>
+    <>
+      <section aria-labelledby="conversation" className="flex-1 space-y-6 py-5">
+        {children}
+        <div className="space-y-6" aria-live="polite">
+          {received.filter((t) => !savedIds.has(t.answer.message.id)).map((t) => (
+            <ReceivedAnswer key={t.submissionId} turn={t} showQuestion={!savedIds.has(t.answer.questionMessageId)} />
+          ))}
+        </div>
+        {footer}
+      </section>
+      <div className="sticky bottom-0 z-10 -mx-4 bg-canvas/90 px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-2 backdrop-blur">
+        {showPending && pending && <PendingTurn text={pending.text} mode={pending.mode} unconfirmed={unconfirmed} />}
+        {notice && <p role="status" className="mb-2 rounded-2xl bg-person-soft px-3.5 py-2 text-sm text-person-deep">{notice}</p>}
+        {!aiAvailable && !notice && (
+          <p className="mb-2 rounded-2xl bg-surface px-3.5 py-2 text-sm text-ink-2 ring-1 ring-line">
+            {aiEnabled ? "The AI allowance for this demo is used up." : "AI answers are turned off for this demo right now."} Policies and staff messaging still work.
+          </p>
         )}
-        {unconfirmed && <button type="submit" disabled={busy} className="btn-primary h-10 min-h-0">Retry</button>}
-      </form>
-      <div className="mt-1.5 flex items-center justify-between gap-3 px-3 text-xs text-ink-3">
-        <span>
-          <span aria-label="AI answers used this session" title="Routine questions are answered by AI, up to a per-demo allowance.">AI answers · {Math.min(usage.sessionUsed, usage.sessionLimit)} of {usage.sessionLimit} used</span>
-          <span className="hidden sm:inline"> · {text.trim().length}/{maxChars} · <span data-key-hint>Enter sends · Shift+Enter new line · Esc leaves · / focuses</span></span>
-        </span>
-        {aiAvailable && !unconfirmed && (
-          <button type="button" onClick={() => send("staff")} disabled={busy} className="btn-link min-h-9 font-medium text-ink">Message staff instead</button>
-        )}
+        <form onSubmit={(e) => { e.preventDefault(); void send(canAsk ? "ask" : "staff"); }} aria-labelledby="ask"
+          className="flex items-end gap-2 rounded-[26px] border border-line bg-surface py-1.5 pl-4 pr-1.5 shadow-float transition focus-within:border-brand focus-within:ring-2 focus-within:ring-brand/30">
+          <label htmlFor="question" id="ask" className="sr-only">Ask the AI assistant or send a message to school staff</label>
+          <textarea
+            id="question" ref={ref} name="question" value={text} rows={1} disabled={busy || unconfirmed} maxLength={maxChars * 2} data-shortcut-focus
+            onChange={(e) => setText(e.target.value)}
+            onKeyDown={(e) => { if (shouldSendOnEnter(keyFacts(e))) { e.preventDefault(); void send(canAsk ? "ask" : "staff"); } }}
+            placeholder={aiAvailable ? "Ask about hours, illness, meals…" : "Write a message for school staff"}
+            className="max-h-32 min-h-10 w-full resize-none bg-transparent py-2 text-base leading-relaxed placeholder:text-ink-3 focus:outline-none"
+          />
+          {unconfirmed ? (
+            <button type="button" onClick={editInstead} className="btn-link mb-0.5 mr-2">Edit instead</button>
+          ) : canAsk ? (
+            <button type="submit" disabled={busy} aria-label={busy ? "Sending" : "Ask AI"} title="Ask AI"
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-ink text-white transition hover:bg-ink-2 disabled:bg-line focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2">
+              <svg aria-hidden width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 19V5" /><path d="M5 12l7-7 7 7" /></svg>
+            </button>
+          ) : (
+            <button type="submit" disabled={busy} className="btn-person mb-0 h-10 min-h-0">{busy ? "Sending…" : "Send to school staff"}</button>
+          )}
+          {unconfirmed && <button type="submit" disabled={busy} className="btn-primary h-10 min-h-0">Retry</button>}
+        </form>
+        <div className="mt-1.5 flex items-center justify-between gap-3 px-3 text-xs text-ink-3">
+          <span>
+            <span aria-label="AI answers used this session" title="Routine questions are answered by AI, up to a per-demo allowance.">AI answers · {Math.min(displayedUsage.sessionUsed, displayedUsage.sessionLimit)} of {displayedUsage.sessionLimit} used</span>
+            <span className="hidden sm:inline"> · {text.trim().length}/{maxChars} · <span data-key-hint>Enter sends · Shift+Enter new line · Esc leaves · / focuses</span></span>
+          </span>
+          {aiAvailable && !unconfirmed && (
+            <button type="button" onClick={() => send("staff")} disabled={busy} className="btn-link min-h-9 font-medium text-ink">Message staff instead</button>
+          )}
+        </div>
+        <DeliveryStatus delivery={delivery} />
       </div>
-      <DeliveryStatus delivery={delivery} />
-    </div>
+    </>
   );
 }
 
@@ -145,7 +185,7 @@ function PendingTurn({ text, mode, unconfirmed }: { text: string; mode: Mode; un
         <div className="flex items-center gap-2 text-xs text-ink-3">
           {!unconfirmed && <span aria-hidden className="inline-flex items-center gap-1"><span className="pulse-dot" /><span className="pulse-dot" /><span className="pulse-dot" /></span>}
           <span className="font-medium text-ink">
-            {unconfirmed ? "Not confirmed yet" : mode === "ask" ? "AI assistant is reading the policies" : "Saving your message for school staff"}
+            {unconfirmed ? "Not confirmed yet" : mode === "ask" ? "AI assistant is responding" : "Saving your message for school staff"}
           </span>
         </div>
         {!unconfirmed && (
@@ -159,4 +199,17 @@ function PendingTurn({ text, mode, unconfirmed }: { text: string; mode: Mode; un
       </div>
     </div>
   );
+}
+
+// Reuse the persisted-message UI, including source snapshots and handoff controls.
+function ReceivedAnswer({ turn: { submissionId, question, answer }, showQuestion }: { turn: ReceivedTurn; showQuestion: boolean }) {
+  const base = { conversationId: "", requestId: null, staffName: null, createdAt: new Date(answer.message.createdAt) };
+  const sources = answer.sources.map((s) => ({ ...s, publishedAt: s.publishedAt ? new Date(s.publishedAt) : null }));
+  return <div className="space-y-3" data-received={answer.message.id}>
+    {showQuestion && <MessageBubble viewer="parent" message={{ ...base, id: answer.questionMessageId, speaker: "parent", body: question }} />}
+    <MessageBubble viewer="parent" message={{ ...base, ...answer.message, createdAt: base.createdAt, speaker: "assistant" }} sources={sources} />
+    {(answer.status === "handoff_offered" || answer.status === "sensitive") && !answer.request &&
+      <HandoffOffer submissionId={submissionId} question={question} variant={answer.status === "sensitive" ? "sensitive" : "handoff"} />}
+    {answer.request && <p className="text-sm text-ink-2">Saved for school staff. Staff read messages during office hours.</p>}
+  </div>;
 }

@@ -1,3 +1,4 @@
+import { smallTalkReply } from "@/lib/small-talk";
 import { NextResponse, type NextRequest } from "next/server";
 import { SESSION_HEADER } from "@/lib/center-config";
 import { AI_ANSWERS_ENABLED } from "@/lib/limits";
@@ -29,7 +30,7 @@ export async function POST(req: NextRequest) {
   if (!validateSubmissionId(submissionId)) return NextResponse.json({ error: "invalid submissionId" }, { status: 400 });
   const v = validateQuestion(question);
   if (!v.ok) return NextResponse.json({ error: v.error }, { status: 400 });
-  if (!AI_ANSWERS_ENABLED) return NextResponse.json({ status: "disabled" }, { status: 503 });
+  if (!AI_ANSWERS_ENABLED && !smallTalkReply(v.question)) return NextResponse.json({ status: "disabled" }, { status: 503 });
 
   await ensureSession(sessionId);
   const result = await askFrontDesk(sessionId, { submissionId, question: v.question });
@@ -46,8 +47,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({
         status: result.status,
         inquiryId: result.inquiry.id,
+        questionMessageId: result.inquiry.questionMessageId,
         message: { id: result.message.id, body: result.message.body, createdAt: result.message.createdAt },
-        sources: result.sources.map((s) => ({ id: s.id, title: s.title, policyText: s.policyText })),
+        sources: result.sources,
         request: result.request ? { id: result.request.id, status: result.request.status } : null,
         usage: result.usage,
       });

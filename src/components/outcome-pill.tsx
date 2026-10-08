@@ -1,6 +1,7 @@
 import type { InquiryOutcome } from "@/lib/inquiries";
 
 export const outcomeLabel: Record<InquiryOutcome, string> = {
+  chat: "Small talk",
   pending: "Answering",
   answered: "Answered",
   clarified: "Clarified",
@@ -11,6 +12,7 @@ export const outcomeLabel: Record<InquiryOutcome, string> = {
 };
 
 const tone: Record<InquiryOutcome, string> = {
+  chat: "text-ink-3",
   pending: "text-ink-3",
   answered: "text-brand-deep",
   clarified: "text-ink-2",

@@ -48,6 +48,6 @@ describe("questions thread", () => {
     expect(totals.answered).toBe(2);
     expect(totals.sensitive).toBe(1);
     expect(totals.pending).toBe(0);
-    expect(Object.keys(totals).sort()).toEqual(["answered", "clarified", "failed", "handoff_offered", "pending", "sensitive", "staff_requested"]);
+    expect(Object.keys(totals).sort()).toEqual(["answered", "chat", "clarified", "failed", "handoff_offered", "pending", "sensitive", "staff_requested"]);
   });
 });

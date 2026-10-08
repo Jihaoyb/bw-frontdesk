@@ -1,5 +1,6 @@
 // Question history and the automated-answer flow. Everything is scoped to the
 // active session. The model never writes the database; this module does.
+import { smallTalkReply } from "./small-talk";
 import type { PoolClient } from "pg";
 import { answerQuestion, type AnswerResult } from "./answer-service";
 import { randomUUID } from "node:crypto";
@@ -11,7 +12,7 @@ import { consumeAllowance, type UsageSnapshot } from "./usage";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-export type InquiryOutcome = "pending" | "answered" | "clarified" | "handoff_offered" | "sensitive" | "failed" | "staff_requested";
+export type InquiryOutcome = "pending" | "chat" | "answered" | "clarified" | "handoff_offered" | "sensitive" | "failed" | "staff_requested";
 
 export type Inquiry = {
   id: string;
@@ -117,7 +118,7 @@ export async function listEvidenceForMessage(sessionId: string, messageId: strin
 }
 
 export type AskResult =
-  | { status: "answered" | "clarified" | "handoff_offered" | "sensitive"; inquiry: Inquiry; message: Message; sources: Evidence[]; request: StaffRequest | null; usage: UsageSnapshot | null }
+  | { status: "chat" | "answered" | "clarified" | "handoff_offered" | "sensitive"; inquiry: Inquiry; message: Message; sources: Evidence[]; request: StaffRequest | null; usage: UsageSnapshot | null }
   | { status: "staff_requested"; inquiry: Inquiry; request: StaffRequest; usage: UsageSnapshot | null }
   | { status: "failed"; inquiry: Inquiry; reason: string; usage: UsageSnapshot | null }
   | { status: "limited"; inquiry: Inquiry; scope: "session" | "daily"; usage: UsageSnapshot }
@@ -142,6 +143,10 @@ export async function askFrontDesk(
   if (inquiry.outcome !== "pending" && inquiry.outcome !== "failed") return await replay(sessionId, inquiry);
   if (inquiry.outcome === "pending" && !inquiry.fresh) return { status: "pending", inquiry };
 
+  // Canned social replies still persist and replay, but need no model, policies, or allowance.
+  const greeting = smallTalkReply(inquiry.question);
+  if (greeting) return persistResult(sessionId, inquiry, { kind: "chat", text: greeting, contactStaff: false }, null);
+
   // 2. Allowance before dispatch. Rejections consume nothing and are not model failures.
   const allowancePromise = consumeAllowance(sessionId, input.usageDay ? { day: input.usageDay } : {});
   // 3. Grounding: published knowledge only (drafts excluded by the query), plus recent parent/front-desk turns.
@@ -151,7 +156,7 @@ export async function askFrontDesk(
     const updated = await setOutcome(sessionId, inquiry.id, "failed", `allowance_${allowance.scope}`);
     return { status: "limited", inquiry: updated, scope: allowance.scope, usage: allowance.usage };
   }
-  const result = await answerQuestion({ question: v.question, knowledge, turns });
+  const result = await answerQuestion({ question: inquiry.question, knowledge, turns });
 
   // 4. Persist the outcome with its evidence.
   return persistResult(sessionId, inquiry, result, allowance.usage);
@@ -239,7 +244,7 @@ async function persistResult(sessionId: string, inquiry: Inquiry, result: Answer
   }
 
   const outcome: InquiryOutcome =
-    result.kind === "answer" ? "answered" : result.kind === "clarify" ? "clarified" : result.kind === "sensitive" ? "sensitive" : "handoff_offered";
+    result.kind === "chat" ? "chat" : result.kind === "answer" ? "answered" : result.kind === "clarify" ? "clarified" : result.kind === "sensitive" ? "sensitive" : "handoff_offered";
   // One statement (issue 015, was a five-step transaction): the assistant
   // message, its evidence rows, and the inquiry outcome commit together. The
   // message id is generated here so the evidence and the inquiry can reference
@@ -278,7 +283,7 @@ async function persistResult(sessionId: string, inquiry: Inquiry, result: Answer
     request = (await createStaffRequest(sessionId, { submissionId: inquiry.submissionId, question: inquiry.question, origin: "sensitive" })).request;
     saved.inquiry = (await getInquiry(sessionId, inquiry.id)) ?? saved.inquiry;
   }
-  return { status: outcome as "answered" | "clarified" | "handoff_offered" | "sensitive", ...saved, request, usage };
+  return { status: outcome as "chat" | "answered" | "clarified" | "handoff_offered" | "sensitive", ...saved, request, usage };
 }
 
 /**
@@ -311,5 +316,5 @@ async function replay(sessionId: string, inquiry: Inquiry): Promise<AskResult> {
     getPool().query<MessageRow>(`SELECT ${MSG_COLS} FROM messages WHERE id = $1 AND session_id = $2`, [inquiry.answerMessageId, sessionId]),
     listEvidenceForMessage(sessionId, inquiry.answerMessageId),
   ]);
-  return { status: inquiry.outcome as "answered" | "clarified" | "handoff_offered" | "sensitive", inquiry, message: toMessage(msg.rows[0]), sources, request: null, usage: null };
+  return { status: inquiry.outcome as "chat" | "answered" | "clarified" | "handoff_offered" | "sensitive", inquiry, message: toMessage(msg.rows[0]), sources, request: null, usage: null };
 }

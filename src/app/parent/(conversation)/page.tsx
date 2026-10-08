@@ -46,7 +46,8 @@ export default async function ParentPage() {
       {/* Issue 014: phone = one column; ≥1024px = conversation column plus a sticky rail (contact, your requests, session note). */}
       <div className="mx-auto flex w-full max-w-7xl flex-1 gap-10 px-4 lg:px-8">
         <main className="flex w-full min-w-0 max-w-[680px] flex-1 flex-col">
-          <section aria-labelledby="conversation" className="flex-1 space-y-6 py-5">
+          <Composer savedMessageIds={messages.map((m) => m.id)} maxChars={MAX_QUESTION_CHARS} usage={usage} aiEnabled={AI_ANSWERS_ENABLED}
+            footer={<><div className="lg:hidden"><CenterInfo /></div><p className="text-xs text-ink-3 lg:hidden" data-session-note>{sessionNote}</p></>}>
             <h2 id="conversation" className="sr-only">Conversation</h2>
             {messages.length === 0 && (
               <div className="rise flex flex-col gap-2 py-6">
@@ -77,10 +78,7 @@ export default async function ParentPage() {
                 );
               })}
             </ol>
-            <div className="lg:hidden"><CenterInfo /></div>
-            <p className="text-xs text-ink-3 lg:hidden" data-session-note>{sessionNote}</p>
-          </section>
-          <Composer maxChars={MAX_QUESTION_CHARS} usage={usage} aiEnabled={AI_ANSWERS_ENABLED} />
+          </Composer>
         </main>
         <aside className="hidden w-[320px] shrink-0 lg:block" aria-label="Your requests and contact">
           <div className="sticky top-20 flex flex-col gap-4 py-5">
