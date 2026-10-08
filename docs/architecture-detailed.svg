@@ -1,0 +1,66 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="960" viewBox="0 0 1440 960" role="img" aria-labelledby="title desc">
+  <title id="title">AI Front Desk — planned architecture</title>
+  <desc id="desc">Parent and operator views share a Next.js server on Vercel. The server stores isolated demo data in Neon PostgreSQL and calls OpenAI GPT-6 Luna with published policies. Staff replies remain separate from explicitly published knowledge. All components represent the agreed design, not a deployed system.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#587477"/></marker>
+    <style>
+      text { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif; fill: #193b3e; }
+      .title { font-size: 38px; font-weight: 700; }
+      .heading { font-size: 25px; font-weight: 650; }
+      .body { font-size: 21px; }
+      .small { font-size: 18px; fill: #4c686b; }
+      .label { font-size: 16px; font-weight: 700; letter-spacing: 1.5px; fill: #35716b; }
+      .line { fill: none; stroke: #587477; stroke-width: 2.5; marker-end: url(#arrow); }
+      .both { marker-start: url(#arrow); }
+    </style>
+  </defs>
+  <rect width="1440" height="960" fill="#f5f8f7"/>
+  <text x="64" y="68" class="title">AI Front Desk</text>
+  <text x="64" y="105" class="body" fill="#4c686b">Fast policy answers. Clear staff follow-up. Better knowledge over time.</text>
+  <rect x="1113" y="37" width="263" height="43" rx="21" fill="#e4eeeb"/>
+  <text x="1245" y="65" text-anchor="middle" class="label">PLANNED ARCHITECTURE</text>
+
+  <rect x="64" y="142" width="1312" height="387" rx="24" fill="#edf4f1" stroke="#cadbd6"/>
+  <text x="90" y="177" class="label">ONE NEXT.JS APPLICATION · HOSTED ON VERCEL</text>
+
+  <rect x="94" y="196" width="596" height="148" rx="16" fill="#fff" stroke="#c4d6d2"/>
+  <text x="120" y="232" class="heading">Parent view</text>
+  <text x="120" y="265" class="body">Ask questions · inspect policy sources</text>
+  <text x="120" y="295" class="body">Follow a staff request in the same conversation</text>
+  <text x="120" y="322" class="small">AI answers and staff replies are clearly identified.</text>
+
+  <rect x="750" y="196" width="596" height="148" rx="16" fill="#fff" stroke="#c4d6d2"/>
+  <text x="776" y="232" class="heading">Operator view</text>
+  <text x="776" y="265" class="body">Review requests · reply · track progress</text>
+  <text x="776" y="295" class="body">Edit and explicitly publish center knowledge</text>
+  <text x="776" y="322" class="small">A staff reply alone never becomes reusable policy.</text>
+
+  <path d="M 392 352 L 392 393" class="line both"/>
+  <path d="M 1048 352 L 1048 393" class="line both"/>
+  <rect x="94" y="404" width="1252" height="99" rx="16" fill="#193b3e"/>
+  <text x="120" y="441" class="heading" style="fill:#fff">Next.js server</text>
+  <text x="120" y="474" class="body" style="fill:#dcebe7">Session isolation · usage limits · response validation · request and publication actions</text>
+
+  <path d="M 392 513 L 392 590" class="line both"/>
+  <text x="413" y="561" class="small">Read / write demo state</text>
+  <path d="M 1048 513 L 1048 590" class="line both"/>
+  <text x="1070" y="553" class="small">Published policies in</text>
+  <text x="1070" y="578" class="small">Structured result out</text>
+
+  <rect x="94" y="602" width="596" height="173" rx="18" fill="#fff" stroke="#c4d6d2"/>
+  <text x="120" y="643" class="heading">Neon PostgreSQL</text>
+  <text x="120" y="679" class="body">Policies and versions · conversations · requests</text>
+  <text x="120" y="710" class="body">Cited policy snapshots · demo usage counters</text>
+  <text x="120" y="748" class="small">Shared by both views; isolated for each demo session.</text>
+
+  <rect x="750" y="602" width="596" height="173" rx="18" fill="#fff" stroke="#c4d6d2"/>
+  <text x="776" y="643" class="heading">OpenAI · GPT-6 Luna</text>
+  <text x="776" y="679" class="body">Responses API with structured outputs</text>
+  <text x="776" y="710" class="body">Answer with sources · clarify · suggest handoff</text>
+  <text x="776" y="748" class="small">The server controls actions; the model has no DB access.</text>
+
+  <rect x="64" y="811" width="1312" height="86" rx="18" fill="#dceee5"/>
+  <text x="90" y="845" class="label">THE IMPROVEMENT LOOP</text>
+  <text x="90" y="877" class="body">Question exposes a gap → staff publishes an update → the next family gets a grounded answer</text>
+  <text x="64" y="932" class="small">Design scope: fictional data · asynchronous staff replies · optional decision time · no email/SMS delivery</text>
+</svg>
