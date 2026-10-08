@@ -2,6 +2,7 @@ import type { PoolClient } from "pg";
 import { getPool } from "./db";
 import { MAX_QUESTION_CHARS } from "./limits";
 import { centerConfig } from "./center-config";
+import { recordStaffRequestInquiry } from "./inquiries";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -118,14 +119,26 @@ export async function createStaffRequest(sessionId: string, input: CreateRequest
         [sessionId, input.submissionId]);
       return { request: toRequest(existing.rows[0]), created: false };
     }
-    const msg = await client.query<{ id: string }>(
-      `INSERT INTO messages (session_id, conversation_id, request_id, speaker, body) VALUES ($1, $2, $3, 'parent', $4) RETURNING id`,
-      [sessionId, conversationId, claimed.rows[0].id, v.question],
-    );
+    // If this question was already saved by the front desk flow (failed answer →
+    // Ask staff), attach the request to that message instead of saving it twice.
+    const prior = await client.query<{ question_message_id: string | null }>(
+      "SELECT question_message_id FROM inquiries WHERE session_id = $1 AND submission_id = $2", [sessionId, input.submissionId]);
+    const msg = prior.rows[0]?.question_message_id
+      ? await client.query<{ id: string }>(
+        "UPDATE messages SET request_id = $3 WHERE id = $1 AND session_id = $2 RETURNING id",
+        [prior.rows[0].question_message_id, sessionId, claimed.rows[0].id])
+      : await client.query<{ id: string }>(
+        `INSERT INTO messages (session_id, conversation_id, request_id, speaker, body) VALUES ($1, $2, $3, 'parent', $4) RETURNING id`,
+        [sessionId, conversationId, claimed.rows[0].id, v.question],
+      );
     const updated = await client.query<RequestRow>(
       `UPDATE staff_requests SET question_message_id = $1 WHERE id = $2 RETURNING ${REQUEST_COLS}`,
       [msg.rows[0].id, claimed.rows[0].id],
     );
+    // Question history (issue 004): a direct staff request is still a parent question.
+    await recordStaffRequestInquiry(client, sessionId, {
+      conversationId, submissionId: input.submissionId, questionMessageId: msg.rows[0].id, requestId: claimed.rows[0].id, question: v.question,
+    });
     await client.query("COMMIT");
     return { request: toRequest(updated.rows[0]), created: true };
   } catch (err) {

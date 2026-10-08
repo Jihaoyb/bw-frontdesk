@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { markReviewingAction, reopenRequestAction, staffReplyAction } from "@/app/actions";
 import type { RequestStatus, StaffReplyOutcome } from "@/lib/requests";
-import { statusLabel } from "./request-card";
+import { StatusPill } from "./request-card";
 import { deliver, DeliveryStatus, type Delivery } from "./delivery-status";
 
 // Explicit staff actions. Opening the request page records nothing; only the
@@ -31,38 +31,37 @@ export function StaffReplyPanel({ requestId, status, staffNames, maxChars }: {
     return run(() => staffReplyAction(requestId, { staffName, body: trimmed, outcome }), true);
   }
 
-  const btn = "rounded-md px-3 py-2 text-sm font-medium disabled:opacity-50";
   return (
-    <section aria-labelledby="staff-actions" className="rounded-lg border border-stone-300 bg-white p-4 text-sm">
+    <section aria-labelledby="staff-actions" className="card p-4 text-sm">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h3 id="staff-actions" className="font-semibold">Reply to the family</h3>
-        <span className="rounded-full bg-stone-100 px-2 py-0.5 text-xs" data-status={status}>{statusLabel[status]}</span>
+        <h3 id="staff-actions" className="text-base font-semibold tracking-tight">Reply to the family</h3>
+        <StatusPill status={status} />
       </div>
       <div className="mt-3 flex flex-wrap gap-2">
         {!closed && status !== "staff_reviewing" && (
-          <button type="button" disabled={busy} onClick={() => run(() => markReviewingAction(requestId))} className={btn + " border border-stone-300"}>
+          <button type="button" disabled={busy} onClick={() => run(() => markReviewingAction(requestId))} className="btn-ghost">
             Mark reviewing
           </button>
         )}
         {closed && (
-          <button type="button" disabled={busy} onClick={() => run(() => reopenRequestAction(requestId))} className={btn + " border border-stone-300"}>
+          <button type="button" disabled={busy} onClick={() => run(() => reopenRequestAction(requestId))} className="btn-ghost">
             Reopen
           </button>
         )}
       </div>
-      <label htmlFor="staff-name" className="mt-3 block text-xs font-semibold uppercase tracking-wide text-stone-500">Replying as</label>
+      <label htmlFor="staff-name" className="eyebrow mt-4 block">Replying as</label>
       <select id="staff-name" value={staffName} onChange={(e) => setStaffName(e.target.value)} disabled={busy}
-        className="mt-1 rounded-md border border-stone-300 p-2 text-base">
+        className="field mt-1 w-auto py-2">
         {staffNames.map((n) => <option key={n} value={n}>{n}</option>)}
       </select>
-      <label htmlFor="staff-body" className="mt-3 block text-xs font-semibold uppercase tracking-wide text-stone-500">Message</label>
+      <label htmlFor="staff-body" className="eyebrow mt-3 block">Message</label>
       <textarea id="staff-body" value={body} onChange={(e) => setBody(e.target.value)} rows={3} disabled={busy} maxLength={maxChars * 2}
-        placeholder="Write a reply to this family" className="mt-1 w-full rounded-md border border-stone-300 p-2 text-base" />
+        placeholder="Write a reply to this family" className="field mt-1" />
       <p className="mt-1 text-xs text-stone-500">{body.trim().length}/{maxChars}. This reply goes to this family only; it does not change center policies.</p>
       <div className="mt-3 flex flex-wrap gap-2">
-        <button type="button" disabled={busy} onClick={() => send("reply")} className={btn + " bg-stone-900 text-white"}>Send reply</button>
-        <button type="button" disabled={busy} onClick={() => send("needs_your_reply")} className={btn + " border border-stone-300"}>Send as Needs your reply</button>
-        <button type="button" disabled={busy} onClick={() => send("close")} className={btn + " border border-stone-300"}>Send &amp; close</button>
+        <button type="button" disabled={busy} onClick={() => send("reply")} className="btn-primary">Send reply</button>
+        <button type="button" disabled={busy} onClick={() => send("needs_your_reply")} className="btn-ghost">Send as Needs your reply</button>
+        <button type="button" disabled={busy} onClick={() => send("close")} className="btn-ghost">Send &amp; close</button>
       </div>
       <div className="mt-2"><DeliveryStatus delivery={delivery} /></div>
     </section>

@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import { MessageBubble } from "@/components/message-bubble";
 import { PerspectiveNav } from "@/components/perspective-nav";
@@ -24,11 +25,14 @@ export default async function RequestPage({ params }: { params: Promise<{ id: st
     <>
       <PerspectiveNav active="operator" current="/operator/inbox" />
       <main className="mx-auto w-full max-w-xl flex-1 space-y-4 px-4 py-4">
-        <p className="text-xs text-stone-500">Origin: <span data-origin={request.origin}>{originLabel[request.origin]}</span></p>
+        <div className="flex items-center justify-between text-xs text-stone-500">
+          <Link href="/operator/inbox" className="underline decoration-stone-300 underline-offset-2">← Inbox</Link>
+          <span>Origin: <span data-origin={request.origin}>{originLabel[request.origin]}</span></span>
+        </div>
         <RequestCard request={request} knownPolicy={knownPolicy} />
-        <section aria-labelledby="thread" className="space-y-2">
-          <h3 id="thread" className="text-sm font-semibold">Messages on this request</h3>
-          <ol className="space-y-2">
+        <section aria-labelledby="thread" className="space-y-3">
+          <h3 id="thread" className="eyebrow">Messages on this request</h3>
+          <ol className="space-y-3">
             {messages.map((m) => <li key={m.id}><MessageBubble message={m} viewer="operator" /></li>)}
           </ol>
         </section>

@@ -1,20 +1,26 @@
-import { AskStaffForm } from "@/components/ask-staff-form";
+import { AnswerFailure } from "@/components/answer-failure";
 import { CenterInfo } from "@/components/center-info";
+import { Composer } from "@/components/composer";
 import { MessageBubble } from "@/components/message-bubble";
 import { ParentReplyForm } from "@/components/parent-reply-form";
 import { PerspectiveNav } from "@/components/perspective-nav";
 import { RequestCard } from "@/components/request-card";
+import { listEvidence, listInquiries } from "@/lib/inquiries";
 import { getKnowledgeEntry } from "@/lib/knowledge";
-import { MAX_QUESTION_CHARS } from "@/lib/limits";
+import { AI_ANSWERS_ENABLED, MAX_QUESTION_CHARS } from "@/lib/limits";
 import { listMessages, listRequests } from "@/lib/requests";
 import { getActiveSession } from "@/lib/request-session";
+import { readUsage } from "@/lib/usage";
 
 export const dynamic = "force-dynamic";
 
 export default async function ParentPage() {
   const session = await getActiveSession();
-  const [messages, requests] = await Promise.all([listMessages(session.id), listRequests(session.id)]);
-  const byMessage = new Map(requests.filter((r) => r.questionMessageId).map((r) => [r.questionMessageId as string, r]));
+  const [messages, requests, inquiries, evidence, usage] = await Promise.all([
+    listMessages(session.id), listRequests(session.id), listInquiries(session.id), listEvidence(session.id), readUsage(session.id),
+  ]);
+  const requestByMessage = new Map(requests.filter((r) => r.questionMessageId).map((r) => [r.questionMessageId as string, r]));
+  const failedByMessage = new Map(inquiries.filter((i) => i.outcome === "failed" && i.questionMessageId).map((i) => [i.questionMessageId as string, i]));
   const knownPolicies = new Map(
     await Promise.all(
       requests.filter((r) => r.knownPolicyEntryId).map(async (r) => [r.id, await getKnowledgeEntry(session.id, r.knownPolicyEntryId as string)] as const),
@@ -24,23 +30,30 @@ export default async function ParentPage() {
   // so the exchange reads alongside the original question after a refresh.
   const followUps = new Map<string, typeof messages>();
   for (const m of messages) {
-    if (m.requestId && !byMessage.has(m.id)) followUps.set(m.requestId, [...(followUps.get(m.requestId) ?? []), m]);
+    if (m.requestId && !requestByMessage.has(m.id)) followUps.set(m.requestId, [...(followUps.get(m.requestId) ?? []), m]);
   }
 
   return (
     <>
       <PerspectiveNav active="parent" current="/parent" />
-      <main className="mx-auto w-full max-w-xl flex-1 space-y-4 px-4 py-4">
-        <section aria-labelledby="conversation" className="space-y-3">
-          <h2 id="conversation" className="text-sm font-semibold">Conversation</h2>
-          {messages.length === 0 && <p className="text-sm text-stone-500">No messages yet. Ask a question below.</p>}
-          <ol className="space-y-3">
+      <main className="mx-auto flex w-full max-w-xl flex-1 flex-col px-4">
+        <section aria-labelledby="conversation" className="flex-1 space-y-4 py-4">
+          <h2 id="conversation" className="sr-only">Conversation</h2>
+          {messages.length === 0 && (
+            <div className="card p-5 text-center">
+              <p className="text-base font-semibold tracking-tight">Hi there 👋</p>
+              <p className="mt-1 text-sm text-stone-600">Ask about hours, closures, illness rules, meals, or billing. Answers come from the center&apos;s published policies, with the source attached.</p>
+            </div>
+          )}
+          <ol className="space-y-4">
             {messages.map((m) => {
-              const req = byMessage.get(m.id);
+              const req = requestByMessage.get(m.id);
+              const failed = failedByMessage.get(m.id);
               if (m.requestId && !req) return null; // rendered under its request below
               return (
                 <li key={m.id} className="space-y-2">
-                  <MessageBubble message={m} viewer="parent" />
+                  <MessageBubble message={m} viewer="parent" sources={evidence.get(m.id) ?? []} />
+                  {failed && <AnswerFailure submissionId={failed.submissionId} question={failed.question} reason={failed.failureReason} />}
                   {req && (
                     <div className="space-y-2" data-request={req.id}>
                       <RequestCard request={req} knownPolicy={knownPolicies.get(req.id) ?? null} />
@@ -52,9 +65,9 @@ export default async function ParentPage() {
               );
             })}
           </ol>
+          <CenterInfo />
         </section>
-        <AskStaffForm maxChars={MAX_QUESTION_CHARS} />
-        <CenterInfo />
+        <Composer maxChars={MAX_QUESTION_CHARS} usage={usage} aiEnabled={AI_ANSWERS_ENABLED} />
       </main>
     </>
   );

@@ -5,24 +5,22 @@ import { centerConfig } from "@/lib/center-config";
 // message has been delivered to a person.
 export function CenterInfo() {
   return (
-    <section aria-labelledby="center-info" className="rounded-lg border border-stone-200 bg-white p-4">
-      <h2 id="center-info" className="text-sm font-semibold">Hours and contact</h2>
-      <dl className="mt-2 space-y-1 text-sm">
-        <div className="flex gap-2">
-          <dt className="w-28 shrink-0 text-stone-500">Care hours</dt>
-          <dd>{centerConfig.careHours}</dd>
+    <section aria-labelledby="center-info" className="card p-4">
+      <h2 id="center-info" className="eyebrow">Hours and contact</h2>
+      <dl className="mt-2 grid gap-2 text-sm sm:grid-cols-3">
+        <div>
+          <dt className="text-stone-500">Care hours</dt>
+          <dd className="font-medium">{centerConfig.careHours}</dd>
         </div>
-        <div className="flex gap-2">
-          <dt className="w-28 shrink-0 text-stone-500">Office hours</dt>
-          <dd>{centerConfig.officeHours}. Staff read messages during office hours.</dd>
+        <div>
+          <dt className="text-stone-500">Office hours</dt>
+          <dd className="font-medium">{centerConfig.officeHours}</dd>
+          <dd className="text-xs text-stone-500">Staff read messages during office hours.</dd>
         </div>
-        <div className="flex gap-2">
-          <dt className="w-28 shrink-0 text-stone-500">Front office</dt>
-          <dd>
-            <a className="underline" href={`tel:${centerConfig.contactPhone.replace(/\D/g, "")}`}>{centerConfig.contactPhone}</a>
-            {" · "}
-            <a className="underline break-all" href={`mailto:${centerConfig.contactEmail}`}>{centerConfig.contactEmail}</a>
-          </dd>
+        <div>
+          <dt className="text-stone-500">Front office</dt>
+          <dd className="font-medium"><a className="underline decoration-stone-300 underline-offset-2" href={`tel:${centerConfig.contactPhone.replace(/\D/g, "")}`}>{centerConfig.contactPhone}</a></dd>
+          <dd className="break-all text-xs"><a className="text-stone-600 underline decoration-stone-300 underline-offset-2" href={`mailto:${centerConfig.contactEmail}`}>{centerConfig.contactEmail}</a></dd>
         </div>
       </dl>
     </section>
