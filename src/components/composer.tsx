@@ -4,10 +4,11 @@ import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
 import type { UsageSnapshot } from "@/lib/usage";
 import { DeliveryStatus, type Delivery } from "./delivery-status";
+import { keyFacts, shouldSendOnEnter } from "@/lib/compose-keys";
 
 type Mode = "ask" | "staff";
 
-// One composer, two destinations. "Send" asks the front desk (AI, counted
+// One composer, two destinations, each named on its button. "Ask AI" asks the assistant (counted
 // against the allowance). "Ask staff" saves a staff request directly and is
 // never counted. Delivery state is about the save, not about staff progress.
 export function Composer({ maxChars, usage, aiEnabled }: { maxChars: number; usage: UsageSnapshot; aiEnabled: boolean }) {
@@ -84,18 +85,19 @@ export function Composer({ maxChars, usage, aiEnabled }: { maxChars: number; usa
           {aiEnabled ? "The AI allowance for this demo is used up." : "AI answers are turned off for this demo right now."} Policies and staff messaging still work.
         </p>
       )}
-      <form onSubmit={(e) => { e.preventDefault(); void send(aiAvailable ? "ask" : "staff"); }} className="card p-2" aria-labelledby="ask">
-        <label htmlFor="question" id="ask" className="sr-only">Ask the front desk</label>
+      <form onSubmit={(e) => { e.preventDefault(); void send(aiAvailable ? "ask" : "staff"); }} className="card p-2 transition focus-within:border-brand/60 focus-within:ring-2 focus-within:ring-brand/30" aria-labelledby="ask">
+        <label htmlFor="question" id="ask" className="sr-only">Ask the AI assistant or send a message to school staff</label>
         <textarea
           id="question" ref={ref} name="question" value={text} rows={2} disabled={busy || unconfirmed} maxLength={maxChars * 2}
           onChange={(e) => setText(e.target.value)}
-          onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void send(aiAvailable ? "ask" : "staff"); } }}
-          placeholder={aiAvailable ? "Ask about hours, closures, illness, meals…" : "Write a message for staff"}
+          onKeyDown={(e) => { if (shouldSendOnEnter(keyFacts(e))) { e.preventDefault(); void send(aiAvailable ? "ask" : "staff"); } }}
+          placeholder={aiAvailable ? "Ask the AI assistant about hours, closures, illness, meals…" : "Write a message for school staff"}
           className="w-full resize-none bg-transparent px-2 py-1.5 text-base leading-relaxed placeholder:text-stone-400 focus:outline-none"
         />
         <div className="flex items-center justify-between gap-2 px-1 pb-1">
-          <div className="flex items-center gap-3 text-xs text-stone-500">
+          <div className="flex items-center gap-3 text-xs text-stone-600">
             <span>{text.trim().length}/{maxChars}</span>
+            <span className="hidden sm:inline" aria-hidden>Enter sends · Shift+Enter for a new line</span>
             <span aria-label="AI answers used this session" title="Routine questions are answered by AI, up to a per-demo allowance.">
               AI {Math.min(usage.sessionUsed, usage.sessionLimit)}/{usage.sessionLimit}
             </span>
@@ -105,10 +107,10 @@ export function Composer({ maxChars, usage, aiEnabled }: { maxChars: number; usa
               <button type="button" onClick={editInstead} className="btn-link">Edit instead</button>
             )}
             {aiAvailable && !unconfirmed && (
-              <button type="button" onClick={() => send("staff")} disabled={busy} className="btn-link">Ask staff</button>
+              <button type="button" onClick={() => send("staff")} disabled={busy} className="btn-link">Send to school staff</button>
             )}
             <button type="submit" disabled={busy} className={aiAvailable ? "btn-brand" : "btn-primary"}>
-              {busy ? "Sending…" : delivery.kind === "unconfirmed" ? "Retry" : aiAvailable ? "Send" : "Ask staff"}
+              {busy ? "Sending…" : delivery.kind === "unconfirmed" ? "Retry" : aiAvailable ? "Ask AI" : "Send to school staff"}
             </button>
           </div>
         </div>

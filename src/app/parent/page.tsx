@@ -45,7 +45,8 @@ export default async function ParentPage() {
           {messages.length === 0 && (
             <div className="card p-5 text-center">
               <p className="text-base font-semibold tracking-tight">Hi there 👋</p>
-              <p className="mt-1 text-sm text-stone-600">Ask about hours, closures, illness rules, meals, or billing. Answers come from the center&apos;s published policies, with the source attached.</p>
+              <p className="mt-1 text-sm text-stone-600">Ask about hours, closures, illness rules, meals, or billing. An AI assistant answers from the center&apos;s published policies, with the source attached.</p>
+              <p className="mt-2 text-xs text-stone-500">Messages to school staff are not live chat: staff read them during office hours and reply here.</p>
             </div>
           )}
           <ol className="space-y-4">
@@ -71,6 +72,10 @@ export default async function ParentPage() {
             })}
           </ol>
           <CenterInfo />
+          <p className="text-xs text-stone-600" data-session-note>
+            This conversation lives in this browser&apos;s demo session and stays until the demo is reset; it is not tied to an account and does not expire on its own.
+            Messages you send to school staff can be read by staff in this demo. Reset demo (Operator view) deletes this conversation, its requests, and any published updates.
+          </p>
         </section>
         <Composer maxChars={MAX_QUESTION_CHARS} usage={usage} aiEnabled={AI_ANSWERS_ENABLED} />
       </main>

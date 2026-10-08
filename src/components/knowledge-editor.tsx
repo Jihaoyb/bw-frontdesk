@@ -2,6 +2,7 @@ import type { KnowledgeEntry } from "@/lib/knowledge";
 import { MAX_POLICY_TEXT_CHARS, MAX_POLICY_TITLE_CHARS } from "@/lib/limits";
 import { createKnowledgeAction, publishKnowledgeAction, saveKnowledgeDraftAction } from "@/app/actions";
 import { formatPublished } from "./policy-list";
+import { UnsavedGuard } from "./unsaved-guard";
 
 // Operator knowledge editor (issue 006). Plain forms on purpose: saving keeps a
 // draft on the entry; only Publish changes what parents and the AI can read.
@@ -86,12 +87,16 @@ export function KnowledgeEditor({
                   <form action={saveKnowledgeDraftAction} id={`form-${e.id}`} className="space-y-3">
                     <input type="hidden" name="entryId" value={e.id} />
                     <Fields title={editing.title} policyText={editing.policyText} />
+                    <p className="text-xs text-stone-600" data-publish-reminder>
+                      Before publishing: this text becomes a center policy that every family and the AI can read. Remove anything about one child, one family, or one day&apos;s situation.
+                    </p>
                     <div className="flex flex-wrap gap-2">
                       <button type="submit" className="btn-ghost">Save draft</button>
                       <button type="submit" formAction={publishKnowledgeAction} className="btn-primary">
                         {e.publishedAt ? "Publish changes" : "Publish"}
                       </button>
                     </div>
+                    <UnsavedGuard formId={`form-${e.id}`} />
                   </form>
                 </div>
               </details>

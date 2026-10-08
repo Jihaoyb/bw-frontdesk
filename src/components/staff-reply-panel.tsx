@@ -8,13 +8,26 @@ import { StatusPill } from "./request-card";
 import { deliver, DeliveryStatus, type Delivery } from "./delivery-status";
 
 // Explicit staff actions. Opening the request page records nothing; only the
-// buttons here change progress. Close has no confirmation modal; Reopen is the undo.
+// buttons here change progress. One primary Send with a resolution choice; the
+// knowledge draft is a separate action. Close has no confirmation modal; Reopen is the undo.
+
+const resolutionOptions: { value: StaffReplyOutcome; label: string }[] = [
+  { value: "reply", label: "Keep it open" },
+  { value: "needs_your_reply", label: "Ask the family to reply" },
+  { value: "close", label: "Close the request" },
+];
+const resolutionHelp: Record<StaffReplyOutcome, string> = {
+  reply: "Marks it as staff reviewing. Nothing is published and the request stays open.",
+  needs_your_reply: "Shows the family \"Needs your reply\". Their reply reopens review.",
+  close: "Marks it closed for the family. Reopen is always available; closing publishes nothing.",
+};
 export function StaffReplyPanel({ requestId, status, staffNames, maxChars, canDraft }: {
   requestId: string; status: RequestStatus; staffNames: readonly string[]; maxChars: number; canDraft: boolean;
 }) {
   const router = useRouter();
   const [staffName, setStaffName] = useState(staffNames[0] ?? "");
   const [body, setBody] = useState("");
+  const [outcome, setOutcome] = useState<StaffReplyOutcome>("reply");
   const [delivery, setDelivery] = useState<Delivery>({ kind: "idle" });
   const [submissionId, setSubmissionId] = useState<string | null>(null); // stable across retries → one message
   const busy = delivery.kind === "saving";
@@ -81,11 +94,21 @@ export function StaffReplyPanel({ requestId, status, staffNames, maxChars, canDr
       <label htmlFor="staff-body" className="eyebrow mt-3 block">Message</label>
       <textarea id="staff-body" value={body} onChange={(e) => setBody(e.target.value)} rows={3} disabled={busy} maxLength={maxChars * 2}
         placeholder="Write a reply to this family" className="field mt-1" />
-      <p className="mt-1 text-xs text-stone-500">{body.trim().length}/{maxChars}. This reply goes to this family only; it does not change center policies or close the request. A knowledge draft is reviewed and published separately.</p>
+      <p className="mt-1 text-xs text-stone-600">{body.trim().length}/{maxChars}. This reply goes to this family only; it does not change center policies.</p>
+      <fieldset className="mt-3">
+        <legend className="eyebrow">After sending</legend>
+        <div className="mt-1 flex flex-col gap-1.5 sm:flex-row sm:flex-wrap sm:gap-4">
+          {resolutionOptions.map((o) => (
+            <label key={o.value} className="flex min-h-11 cursor-pointer items-center gap-2 text-sm">
+              <input type="radio" name="outcome" value={o.value} checked={outcome === o.value} onChange={() => setOutcome(o.value)} disabled={busy} className="h-4 w-4 accent-stone-900" />
+              {o.label}
+            </label>
+          ))}
+        </div>
+        <p className="mt-1 text-xs text-stone-600" data-outcome-help={outcome}>{resolutionHelp[outcome]}</p>
+      </fieldset>
       <div className="mt-3 flex flex-wrap gap-2">
-        <button type="button" disabled={busy} onClick={() => send("reply")} className="btn-primary">Send reply</button>
-        <button type="button" disabled={busy} onClick={() => send("needs_your_reply")} className="btn-ghost">Send as Needs your reply</button>
-        <button type="button" disabled={busy} onClick={() => send("close")} className="btn-ghost">Send &amp; close</button>
+        <button type="button" disabled={busy} onClick={() => send(outcome)} className="btn-primary">Send reply</button>
         {canDraft && (
           <button type="button" disabled={busy} onClick={sendAndDraft} className="btn-ghost" data-action="send-and-draft">
             Send &amp; open knowledge draft

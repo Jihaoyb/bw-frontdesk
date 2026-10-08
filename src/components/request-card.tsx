@@ -28,6 +28,9 @@ export function StatusPill({ status }: { status: StaffRequest["status"] }) {
 // Three separate facts: known policy (may be none), the unresolved need, and
 // staff progress. Saved does not mean reviewed; reviewed does not mean approved.
 export function RequestCard({ request, knownPolicy }: { request: StaffRequest; knownPolicy: KnowledgeEntry | null }) {
+  // The question's label follows the request's state: it "still needs staff"
+  // only while staff have not finished with it.
+  const questionLabel = request.status === "closed" ? "What you asked" : request.status === "needs_your_reply" ? "Your request" : "Still needs staff";
   return (
     <article aria-label="Staff request" className="card overflow-hidden text-sm">
       <div className="flex items-center justify-between gap-2 border-b border-stone-100 bg-stone-50/70 px-4 py-2.5">
@@ -43,11 +46,11 @@ export function RequestCard({ request, knownPolicy }: { request: StaffRequest; k
           <dd className="mt-0.5">
             {knownPolicy
               ? <><span className="font-medium">{knownPolicy.title}.</span> {knownPolicy.policyText}</>
-              : <span className="text-stone-600">{request.origin === "sensitive" ? "Not answered from policy. Staff handle this directly." : "No published policy covers this yet."}</span>}
+              : <span className="text-stone-600">{request.origin === "sensitive" ? "Not answered from policy. Staff handle this directly." : "No policy attached. Staff decide whether a knowledge update is needed."}</span>}
           </dd>
         </div>
         <div>
-          <dt className="eyebrow">Still needs staff</dt>
+          <dt className="eyebrow" data-question-label>{questionLabel}</dt>
           <dd className="mt-0.5 whitespace-pre-wrap">{request.question}</dd>
         </div>
         <div>

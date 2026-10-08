@@ -8,12 +8,12 @@ export const messageTime = new Intl.DateTimeFormat("en-US", {
 });
 
 // Three visually distinct speakers: parent (dark, right), staff (amber, named),
-// and the automated front desk (white, indigo mark). A staff reply is a message
+// and the automated assistant (white, indigo mark, labeled AI). A staff reply is a message
 // to this family; it does not change published knowledge.
 export function MessageBubble({ message, viewer, sources = [] }: { message: Message; viewer: "parent" | "operator"; sources?: Evidence[] }) {
   const m = message;
   const mine = m.speaker === "parent" && viewer === "parent";
-  const who = m.speaker === "parent" ? (mine ? "You" : "Parent") : m.speaker === "staff" ? (m.staffName ?? "Staff") : "Front desk";
+  const who = m.speaker === "parent" ? (mine ? "You" : "Parent") : m.speaker === "staff" ? (m.staffName ?? "Staff") : "AI assistant";
   const bubble = m.speaker === "parent"
     ? "bg-stone-900 text-white rounded-br-md"
     : m.speaker === "staff"
@@ -26,6 +26,7 @@ export function MessageBubble({ message, viewer, sources = [] }: { message: Mess
         {m.speaker === "staff" && <span aria-hidden className="inline-block h-2 w-2 rounded-full bg-amber-500" />}
         <span className="font-medium text-stone-700">{who}</span>
         {m.speaker === "staff" && <span className="pill bg-amber-100 text-amber-900">Staff reply</span>}
+        {m.speaker === "assistant" && <span className="pill bg-indigo-50 text-indigo-800">Automated</span>}
         <span aria-hidden>·</span>
         <time dateTime={m.createdAt.toISOString()}>{messageTime.format(m.createdAt)}</time>
       </div>

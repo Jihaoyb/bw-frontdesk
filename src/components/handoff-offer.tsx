@@ -27,7 +27,7 @@ export function HandoffOffer({ submissionId, question, variant }: { submissionId
       className={"rise max-w-[92%] rounded-2xl rounded-bl-md px-4 py-3 text-sm ring-1 " + (sensitive ? "bg-red-50/60 ring-red-200" : "bg-white/70 ring-stone-200")}
       data-offer={variant}
     >
-      <p className="font-medium text-stone-800">{sensitive ? "This one is for staff, not the automated front desk." : "Want staff to take a look?"}</p>
+      <p className="font-medium text-stone-800">{sensitive ? "This one is for staff, not the automated front desk." : "Want school staff to take a look?"}</p>
       <p className="mt-0.5 text-stone-600">
         {sensitive ? "Send it to staff and they pick it up during office hours." : "Your question is saved. Sending it to staff adds it to their inbox; nothing is sent until you choose to."}
       </p>
