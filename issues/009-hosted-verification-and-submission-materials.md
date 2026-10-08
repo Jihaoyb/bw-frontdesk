@@ -58,7 +58,7 @@ Hosted app: https://bw-frontdesk.vercel.app (commit 3607552 + this ticket). Migr
 | I01 closures | answered, cites K2 |
 
 ### Missing-holiday loop and meal boundary (hosted, Chrome)
-I03 handoff → Ask staff → request card shows K2 as known policy and the unresolved question, status Awaiting review → operator Mark reviewing, reply "We're closed on Veterans Day" → parent sees the staff reply, Knowledge update card still "Knowledge gap open" → I03 again: still handoff → Open knowledge draft (K2 prefilled) → edit the closure list to include Veterans Day (November 11, 2026), Publish → I03 again: "The center is closed on Veterans Day, November 11, 2026." citing K2 → the first answer's source still shows the original text, "Published Sep 1, 2026". I06 answered the policy portion with K5/K4 and offered Ask staff; nothing said a lunch was reserved. Office-hours copy reads "Staff read messages during office hours" with no live-availability claim. Screens were checked in a desktop Chrome window; the hand-held mobile pass is the human sign-off below.
+I03 handoff → Ask staff → request card shows K2 as known policy and the unresolved question, status Awaiting review → operator Mark reviewing, reply "We're closed on Veterans Day" → parent sees the staff reply, Knowledge update card still "No knowledge update yet" → I03 again: still handoff → Open knowledge draft (K2 prefilled) → edit the closure list to include Veterans Day (November 11, 2026), Publish → I03 again: "The center is closed on Veterans Day, November 11, 2026." citing K2 → the first answer's source still shows the original text, "Published Sep 1, 2026". I06 answered the policy portion with K5/K4 and offered Ask staff; nothing said a lunch was reserved. Office-hours copy reads "Staff read messages during office hours" with no live-availability claim. Screens were checked in a desktop Chrome window; the hand-held mobile pass is the human sign-off below.
 
 ### Observable state checks
 - Refresh/persistence: questions, answers, evidence, requests and staff replies survived reloads on the hosted app.
@@ -72,11 +72,25 @@ I03 handoff → Ask staff → request card shows K2 as known policy and the unre
 ### Materials
 `docs/submission-explanation.md` rewritten against verified behavior (about 430 words, one page). `docs/architecture.svg/.png` and `docs/architecture-detailed.svg/.png` relabeled "Verified prototype · Oct 2026", Neon box now lists drafts/evidence/usage, outcomes include sensitive, scope line marks issue 010 as not implemented. PNGs re-rendered from the SVGs with headless Chromium at 2x.
 
+### Post-audit fixes (after the first 009 pass)
+A code audit of 000–008 found eight defects; all are fixed in `fix(NNN)` commits with reproduction tests in `tests/audit-fixes.test.ts` (suite now 64 tests):
+1. Pool starvation on concurrent duplicate submissions (held one connection while requesting another): follow-up SELECT runs on the held client. Test: 8 concurrent duplicates against a pool of 5 complete with one request.
+2. Staff context: request page now shows "Conversation before this request" (parent/front-desk turns before the question). Test: clarify exchange visible, other session sees nothing.
+3. Abandoned pending claims: a pending inquiry older than `MODEL_TIMEOUT_MS` + 10 s is reclaimable on retry, and the parent page shows the recovery card ("That answer never came back") for it. Test: fresh pending stays in flight, stale pending is re-run once.
+4. Publish race: Publish sends the reviewed text in one UPDATE; a draft saved by another tab between review and publish cannot go live. Test: interleaved save then publish yields the reviewed text.
+5. Composer: text is locked while a save is unconfirmed; Retry replays the same submission, "Edit instead" starts a new one and says the earlier may have saved.
+6. Reply duplicates: parent and staff replies carry a submission id (migration 007, partial unique index); retries return the saved message. Test: duplicate and concurrent retries save once.
+7. Gap label overstated missing policy: relabeled "No knowledge update yet", copy explains that a decision under complete policy needs no draft.
+8. Matching: apostrophes removed instead of split, so "What's" matches "Whats". Test added.
+Also: exhaustion test now covers policy browsing and parent/staff replies at exhaustion; per-request policy/draft lookups batched (no N+1); writeup wording on sensitive handling corrected (Ask staff is offered, not automatic).
+
 ### Honest gaps
 - Issue 010 (parent decision time) not implemented; stretch scope, omitted.
 - Request cards show the *current* known policy text (live lookup), while answer evidence is a snapshot. After the K2 republish, the old request card displayed the updated list. Design choice, noted here rather than changed.
 - `/api/requests` stores the question text sent by the client; origin and known policy are derived server-side. A hand-crafted call can label a request with different text than the saved inquiry.
 - Grounding checks are small live samples, not measured success rates.
+- The I27 prompt fix and the audit fixes above are verified locally and in the suite; the hosted retest of the deployed revision (I27 answered, loop still green) is recorded under human sign-off below once pushed.
+- Hosted screens were checked in desktop Chrome; the hand-held mobile pass is still the human sign-off.
 
 ### Human sign-off (pending)
 Open https://bw-frontdesk.vercel.app/parent on a phone and run the loop above; confirm sources are readable, status vs delivery is clear, and the writeup reads right. Record the result here.
