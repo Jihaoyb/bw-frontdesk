@@ -70,8 +70,11 @@ export const openAiCaller: ModelCaller = async ({ system, turns, question, signa
   // Issue 015: the answer is a short classification over a few pages of policy, so
   // the model runs at low reasoning effort and low verbosity by default. Both are
   // configuration; an empty value sends nothing and leaves the model's default.
-  const effort = process.env.OPENAI_REASONING_EFFORT ?? "low";
-  const verbosity = process.env.OPENAI_VERBOSITY ?? "low";
+  // GPT-4.1 (including mini/nano and dated snapshots) does not accept these
+  // reasoning-model controls. Switching model alone must still produce a valid request.
+  const isGpt41 = /^gpt-4\.1(?:-|$)/.test(model);
+  const effort = isGpt41 ? "" : process.env.OPENAI_REASONING_EFFORT ?? "low";
+  const verbosity = isGpt41 ? "" : process.env.OPENAI_VERBOSITY ?? "low";
   const res = await fetch("https://api.openai.com/v1/responses", {
     method: "POST",
     headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" },

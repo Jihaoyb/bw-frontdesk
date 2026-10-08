@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1440" height="960" viewBox="0 0 1440 960" role="img" aria-labelledby="title desc">
   <title id="title">AI Front Desk — implemented architecture</title>
-  <desc id="desc">Parent and operator views share a Next.js server on Vercel. The server stores isolated demo data in Neon PostgreSQL and calls OpenAI GPT-6 Luna with published policies. Staff replies remain separate from explicitly published knowledge. All components are implemented and were verified on the hosted demo in October 2026.</desc>
+  <desc id="desc">Parent and operator views share a Next.js server on Vercel. The server stores isolated demo data in Neon PostgreSQL and calls the configured OpenAI model with published policies. Staff replies remain separate from explicitly published knowledge. All components are implemented and were verified on the hosted demo in October 2026.</desc>
   <defs>
     <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#587477"/></marker>
     <style>
@@ -54,7 +54,7 @@
   <text x="120" y="748" class="small">Shared by both views; isolated for each demo session.</text>
 
   <rect x="750" y="602" width="596" height="173" rx="18" fill="#fff" stroke="#c4d6d2"/>
-  <text x="776" y="643" class="heading">OpenAI · GPT-6 Luna</text>
+  <text x="776" y="643" class="heading">OpenAI model</text>
   <text x="776" y="679" class="body">Responses API with structured outputs</text>
   <text x="776" y="710" class="body">Answer with sources · clarify · handoff · sensitive</text>
   <text x="776" y="748" class="small">The server controls actions; the model has no DB access.</text>

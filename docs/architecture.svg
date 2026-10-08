@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1120" height="850" viewBox="0 0 1120 850" role="img" aria-labelledby="title desc">
 <title id="title">AI Front Desk — architecture overview</title>
-<desc id="desc">Implemented architecture, verified on the hosted demo in October 2026. Parent and operator views use a Next.js server on Vercel. The server reads and writes policies, conversations and requests in Neon PostgreSQL and calls OpenAI GPT-6 Luna. Response and source validation leads to a cited answer, clarification, or an offer to ask staff. Staff replies stay in the conversation; reusable knowledge requires explicit review and publication.</desc>
+<desc id="desc">Implemented architecture, verified on the hosted demo in October 2026. Parent and operator views use a Next.js server on Vercel. The server reads and writes policies, conversations and requests in Neon PostgreSQL and calls the configured OpenAI model. Response and source validation leads to a cited answer, clarification, or an offer to ask staff. Staff replies stay in the conversation; reusable knowledge requires explicit review and publication.</desc>
 <defs>
  <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#859396"/></marker>
  <marker id="teal" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#27877b"/></marker>
@@ -44,7 +44,7 @@
 <path d="M560 240V331" class="line"/>
 <text x="540" y="278" class="label" style="text-anchor:end">Question + published policies</text>
 <rect x="414" y="341" width="292" height="88" rx="12" fill="#eeedff" stroke="#b5b0ec"/>
-<text x="560" y="378" class="head">OpenAI · GPT-6 Luna</text>
+<text x="560" y="378" class="head">OpenAI model</text>
 <text x="560" y="406" class="sub">Structured response + source IDs</text>
 <path d="M560 439V500" class="line"/>
 <rect x="414" y="510" width="292" height="88" rx="12" fill="#fff2dd" stroke="#d8b579"/>
