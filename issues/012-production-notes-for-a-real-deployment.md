@@ -14,9 +14,9 @@ The same UX review raised concerns that are correct for a real product but contr
 
 ## Acceptance criteria
 
-- [ ] `docs/production-notes.md` has a section per topic: roles and navigation, tenancy (school-owned knowledge and queue vs. private conversations), identity at handoff and return access, staff attribution and ownership, incoming-reply delivery and unread state, new conversation vs. reset, retention and privacy copy, queue operations (owner, needs-action filters, last-activity sort).
-- [ ] Each section states what the prototype does today, why (the PRD story it serves), and what a real deployment would change.
-- [ ] `docs/submission-explanation.md` links to the notes in its deferred-scope line and stays under one page.
+- [x] `docs/production-notes.md` has a section per topic: roles and navigation, tenancy (school-owned knowledge and queue vs. private conversations), identity at handoff and return access, staff attribution and ownership, incoming-reply delivery and unread state, new conversation vs. reset, retention and privacy copy, queue operations (owner, needs-action filters, last-activity sort).
+- [x] Each section states what the prototype does today, why (the PRD story it serves), and what a real deployment would change.
+- [x] `docs/submission-explanation.md` links to the notes in its deferred-scope line and stays under one page.
 
 ## Blocked by
 
@@ -25,3 +25,8 @@ The same UX review raised concerns that are correct for a real product but contr
 ## User stories addressed
 
 - User story 36
+
+## Results
+
+- `docs/production-notes.md` rewritten with nine sections (roles and navigation; tenancy; identity at handoff and return access; staff attribution and ownership; incoming replies and unread state; new conversation vs. reset; retention and privacy copy; queue operations; help surface and composer). Each states today's behavior, the PRD story it serves, and the real-deployment change. The earlier retention and knowledge-validity paragraphs are folded into the retention section.
+- `docs/submission-explanation.md` deferred-scope line links to the notes; word count 453, still one page.

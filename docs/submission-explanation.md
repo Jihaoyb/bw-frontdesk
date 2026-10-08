@@ -10,6 +10,6 @@ Staff reply in the same conversation and track progress (reviewing, needs your r
 
 Architecture: one Next.js app on Vercel, Neon PostgreSQL for policies, drafts, conversations, requests, evidence snapshots and usage counters, and OpenAI GPT-6 Luna through the Responses API with a strict JSON schema; the server validates every result and source id before anything is shown. Each browser gets an isolated, resettable demo session; the Parent/Operator switch is a reviewer convenience. AI usage is capped at 50 per session and 500 per day on the server; policy browsing and staff messaging keep working when the cap is hit, and a failed model call keeps the question and offers retry, policies, or staff.
 
-Deferred on purpose: live staff presence, email/SMS delivery, document ingestion, real authentication, and the optional parent decision time (issue 010, not implemented). Known limit: grounding quality is checked on a small live sample per behavior class, not measured as a success rate.
+Deferred on purpose: live staff presence, email/SMS delivery, document ingestion, real authentication and school-wide tenancy (see [production notes](production-notes.md)), and the optional parent decision time (issue 010, not implemented). Known limit: grounding quality is checked on a small live sample per behavior class, not measured as a success rate.
 
 [Architecture diagram (SVG)](architecture.svg) · [PNG](architecture.png) · [Detailed](architecture-detailed.svg)
