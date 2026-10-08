@@ -1,7 +1,5 @@
 import Link from "next/link";
-import { InboxList, parseFilter } from "@/components/inbox-list";
-import { messageTime } from "@/components/message-bubble";
-import { OutcomePill } from "@/components/outcome-pill";
+import { InboxList, parseFilter, queueCounts } from "@/components/inbox-list";
 import { listInquiries } from "@/lib/inquiries";
 import { listRequestKnowledge } from "@/lib/knowledge";
 import { draftEntriesFrom } from "@/lib/knowledge-loop";
@@ -11,53 +9,40 @@ import { getActiveSession } from "@/lib/request-session";
 
 export const dynamic = "force-dynamic";
 
-// Issue 014: phone = inbox then history; ≥1024px = inbox list left, history right.
+// Issue 016: the inbox is the queue only. Phone = the list; ≥1024px = list left
+// and, with no request open, a quiet panel right. Question history lives at
+// /operator/questions as a conversation.
 export default async function InboxPage({ searchParams }: { searchParams: Promise<{ filter?: string }> }) {
   const { filter: rawFilter } = await searchParams;
   const filter = parseFilter(rawFilter);
   const session = await getActiveSession();
-  // One parallel batch (issue 015): the known policies and drafts come from one query that needs no request list first.
   const [requests, inquiries, policies] = await Promise.all([listRequests(session.id), listInquiries(session.id), listRequestKnowledge(session.id)]);
   const drafts = draftEntriesFrom(requests, policies);
   const counts = matchingCounts(inquiries); // this session only; resets with its content
-  // Match count per request: the count of its own question text in the history.
   const requestCounts = new Map(requests.map((r) => [r.id, matchCount(counts, r)]));
+  const q = queueCounts(requests);
   return (
-    <>
-      <div className="mx-auto grid w-full max-w-7xl flex-1 gap-10 px-4 py-5 lg:grid-cols-[400px_minmax(0,1fr)] lg:px-8">
-        <InboxList requests={requests} drafts={drafts} policies={policies} counts={requestCounts} filter={filter} />
+    <div className="mx-auto grid w-full max-w-7xl flex-1 gap-10 px-4 py-5 lg:grid-cols-[400px_minmax(0,1fr)] lg:px-8">
+      <InboxList requests={requests} drafts={drafts} policies={policies} counts={requestCounts} filter={filter} />
 
-        <section aria-labelledby="history" className="flex min-w-0 flex-col gap-3">
-          <div className="flex items-baseline justify-between">
-            <h2 id="history" className="text-[22px] font-semibold tracking-[-0.02em]">Question history</h2>
-            <p className="mono text-xs text-ink-3">{inquiries.length} question{inquiries.length === 1 ? "" : "s"}</p>
-          </div>
-          <p className="text-xs text-ink-3">
-            Every parent question in this demo session and how the front desk handled it. A count marks normalized matching questions: the same wording
-            ignoring capitalization, spacing, and punctuation. Different wording is not grouped, and matching requests stay separate.
+      <section aria-labelledby="queue-summary" className="hidden lg:block" data-queue-panel>
+        <div className="sticky top-20 flex max-w-[480px] flex-col gap-4 py-10 text-sm text-ink-2">
+          <h2 id="queue-summary" className="text-[22px] font-semibold tracking-[-0.02em] text-ink">Pick a request</h2>
+          <p>It opens here. Opening a request marks nothing; only Mark reviewing, a reply, or Close change its progress.</p>
+          <dl className="grid grid-cols-3 gap-3">
+            {([["Open", q.open, "open"], ["Need action", q.action, "action"], ["Closed", q.closed, "closed"]] as const).map(([label, n, f]) => (
+              <div key={f} className="card flex flex-col gap-1 p-3.5">
+                <dt className="eyebrow">{label}</dt>
+                <dd className="mono text-[22px] font-semibold tracking-[-0.02em] text-ink" data-count={f}>{n}</dd>
+              </div>
+            ))}
+          </dl>
+          <p>
+            Every parent question in this demo, with how the front desk handled it, reads as a conversation under{" "}
+            <Link href="/operator/questions" className="font-medium text-ink underline decoration-line underline-offset-2 hover:decoration-ink-3">Questions</Link>.
           </p>
-          {inquiries.length === 0 && <p className="card p-4 text-sm text-ink-3">No questions yet.</p>}
-          {inquiries.length > 0 && (
-            <ul className="card divide-y divide-line-soft">
-              {inquiries.map((q) => (
-                <li key={q.id} className="flex items-start gap-3 px-4 py-3 text-sm" data-inquiry={q.id}>
-                  <div className="min-w-0 flex-1">
-                    <p className="line-clamp-2 whitespace-pre-wrap">{q.question}</p>
-                    <p className="mt-1 flex flex-wrap items-center gap-x-2 text-xs text-ink-3">
-                      <span className="mono">{messageTime.format(q.createdAt)}</span>
-                      {matchCount(counts, q) > 1 && (
-                        <span className="pill bg-canvas text-ink-2 ring-1 ring-line" data-matching={matchCount(counts, q)}>{matchCount(counts, q)} normalized matching questions</span>
-                      )}
-                      {q.requestId && <Link href={`/operator/inbox/${q.requestId}`} className="underline decoration-line underline-offset-2 hover:decoration-ink-3">open request</Link>}
-                    </p>
-                  </div>
-                  <OutcomePill outcome={q.outcome} />
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
-      </div>
-    </>
+        </div>
+      </section>
+    </div>
   );
 }

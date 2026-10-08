@@ -73,11 +73,27 @@ export function InboxFrame() {
     <Frame label="Loading the inbox">
       <div className="grid w-full flex-1 gap-10 lg:grid-cols-[400px_minmax(0,1fr)]">
         <InboxColumn />
-        <section className="hidden min-w-0 flex-col gap-3 lg:flex" aria-hidden>
-          <Bar w="w-48" h="h-6" />
-          <div className="card divide-y divide-line-soft">{[0, 1, 2, 3].map((i) => <div key={i} className="flex items-center gap-3 px-4 py-3.5"><Bar w={i % 2 ? "w-1/2" : "w-2/3"} /><div className="ml-auto skeleton h-3 w-14" /></div>)}</div>
+        <section className="hidden max-w-[480px] flex-col gap-4 py-10 lg:flex" aria-hidden>
+          <Bar w="w-40" h="h-6" />
+          <Bar w="w-full" /><Bar w="w-3/4" />
+          <div className="grid grid-cols-3 gap-3">{[0, 1, 2].map((i) => <div key={i} className="card flex flex-col gap-2 p-3.5"><Bar w="w-12" h="h-3" /><Bar w="w-8" h="h-6" /></div>)}</div>
         </section>
       </div>
+    </Frame>
+  );
+}
+
+export function QuestionsFrame() {
+  return (
+    <Frame label="Loading the questions">
+      <main className="flex w-full min-w-0 max-w-[760px] flex-1 flex-col gap-6" aria-hidden>
+        <div className="flex flex-col gap-2"><Bar w="w-32" h="h-6" /><Bar w="w-full" h="h-3" /><Bar w="w-2/3" h="h-3" /></div>
+        <div className="flex flex-col gap-2 items-start"><div className="skeleton h-11 w-[55%] rounded-[20px]" /><Bar w="w-24" h="h-3" /></div>
+        <div className="flex max-w-[92%] flex-col gap-2.5"><Bar w="w-32" h="h-3" /><Bar w="w-[92%]" /><Bar w="w-[78%]" /><Bar w="w-[48%]" /></div>
+        <div className="flex flex-col gap-2 items-start"><div className="skeleton h-11 w-[40%] rounded-[20px]" /><Bar w="w-24" h="h-3" /></div>
+        <div className="flex max-w-[92%] flex-col gap-2.5"><Bar w="w-32" h="h-3" /><Bar w="w-[88%]" /><Bar w="w-[64%]" /></div>
+      </main>
+      <Rail />
     </Frame>
   );
 }

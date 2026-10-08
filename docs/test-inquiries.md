@@ -83,4 +83,4 @@ Tiers: **C** canonical (deterministic tests with controlled model responses, dem
 6. Parent: I06 → policy+confirm card; Operator replies; nothing in the UI says a lunch was reserved.
 7. Parent: I26, I27, I28 → three sourced answers from K9, K3, K10.
 8. Parent: I29 → sensitive handling; Operator inbox shows it flagged, no draft suggested.
-9. Operator: question history shows every question above with its outcome; I22 variants submitted as requests → 3 normalized matching questions, individual requests intact.
+9. Operator: Questions (`/operator/questions`) shows every question above in the conversation with its outcome; I22 variants submitted as requests → 3 normalized matching questions, individual requests intact.

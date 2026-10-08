@@ -9,7 +9,9 @@ import { statusLabel } from "./request-card";
 // client state); each row carries a colored rail for the kind of attention it
 // needs. Opening a request does not mark it reviewed.
 
-export type InboxFilter = "action" | "open" | "all";
+// Issue 016: the inbox is the queue only. Open (default) is everything not
+// closed; Needs action narrows to untouched requests; Closed is the rest.
+export type InboxFilter = "action" | "open" | "closed";
 
 export function needsAction(r: StaffRequest): boolean {
   return r.status === "awaiting_review";
@@ -17,13 +19,19 @@ export function needsAction(r: StaffRequest): boolean {
 
 export function applyFilter(requests: StaffRequest[], filter: InboxFilter): StaffRequest[] {
   if (filter === "action") return requests.filter(needsAction);
-  if (filter === "open") return requests.filter((r) => r.status !== "closed");
-  return requests;
+  if (filter === "closed") return requests.filter((r) => r.status === "closed");
+  return requests.filter((r) => r.status !== "closed");
 }
 
-/** Default is Open: everything staff have not closed. Needs action narrows to untouched requests. */
+/** Default is Open. Anything unknown (including the old `all`) falls back to it. */
 export function parseFilter(raw: string | undefined): InboxFilter {
-  return raw === "action" || raw === "all" ? raw : "open";
+  return raw === "action" || raw === "closed" ? raw : "open";
+}
+
+/** Queue counts for chips and the empty desktop column. */
+export function queueCounts(requests: StaffRequest[]): { open: number; action: number; closed: number } {
+  const closed = requests.filter((r) => r.status === "closed").length;
+  return { open: requests.length - closed, action: requests.filter(needsAction).length, closed };
 }
 
 const rail: Record<StaffRequest["status"], string> = {
@@ -56,8 +64,7 @@ export function InboxList({
   // The request being viewed stays in the list whatever the filter says.
   const filtered = applyFilter(requests, filter);
   const shown = activeId && !filtered.some((r) => r.id === activeId) ? [...filtered, ...requests.filter((r) => r.id === activeId)] : filtered;
-  const nAction = requests.filter(needsAction).length;
-  const nOpen = requests.filter((r) => r.status !== "closed").length;
+  const { open: nOpen, action: nAction, closed: nClosed } = queueCounts(requests);
   const chip = (f: InboxFilter, label: string) => (
     <Link href={`${basePath}?filter=${f}`} aria-current={filter === f ? "page" : undefined} className={"chip " + (filter === f ? "chip-on" : "")} data-filter={f}>
       {label}
@@ -67,15 +74,15 @@ export function InboxList({
     <section aria-labelledby="inbox" className="flex flex-col gap-3">
       <div className="flex items-baseline justify-between">
         <h2 id="inbox" className="text-[22px] font-semibold tracking-[-0.02em]">Inbox</h2>
-        <p className="mono text-xs text-ink-3">{nOpen} open · {requests.length} total</p>
+        <p className="mono text-xs text-ink-3">{nOpen} open · {nAction} need action</p>
       </div>
       <div className="flex gap-2 overflow-x-auto pb-0.5">
         {chip("open", `Open · ${nOpen}`)}
         {chip("action", `Needs action · ${nAction}`)}
-        {chip("all", "All")}
+        {chip("closed", `Closed · ${nClosed}`)}
       </div>
       <p className="text-xs text-ink-3">Opening a request does not mark it reviewed.</p>
-      {shown.length === 0 && <p className="card p-4 text-sm text-ink-3">{filter === "action" ? "Nothing needs action." : filter === "open" ? "No open requests." : "No requests yet."}</p>}
+      {shown.length === 0 && <p className="card p-4 text-sm text-ink-3">{filter === "action" ? "Nothing needs action." : filter === "open" ? "No open requests." : "Nothing closed yet."}</p>}
       <ul className="flex flex-col gap-2.5">
         {shown.map((r) => {
           const gap = knowledgeGapState(r, drafts.get(r.id) ?? null);

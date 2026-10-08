@@ -11,6 +11,7 @@ const subnav: Record<Perspective, { href: string; label: string }[]> = {
   ],
   operator: [
     { href: "/operator/inbox", label: "Inbox" },
+    { href: "/operator/questions", label: "Questions" },
     { href: "/operator", label: "Knowledge" },
   ],
 };
