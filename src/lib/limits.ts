@@ -11,6 +11,9 @@ export const MAX_ANSWER_CHARS = intFromEnv("MAX_ANSWER_CHARS", 1500);
 export const MAX_ANSWER_TOKENS = intFromEnv("MAX_ANSWER_TOKENS", 500);
 /** How long one model call may take before it counts as a failure. */
 export const MODEL_TIMEOUT_MS = intFromEnv("MODEL_TIMEOUT_MS", 20000);
+/** Operator knowledge editor bounds. */
+export const MAX_POLICY_TITLE_CHARS = intFromEnv("MAX_POLICY_TITLE_CHARS", 120);
+export const MAX_POLICY_TEXT_CHARS = intFromEnv("MAX_POLICY_TEXT_CHARS", 3000);
 /** Conversation turns (parent + front desk only) sent as context. */
 export const CONTEXT_TURNS = intFromEnv("CONTEXT_TURNS", 6);
 

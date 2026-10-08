@@ -1,6 +1,8 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
+import { createKnowledgeDraft, publishKnowledge, saveKnowledgeDraft, type KnowledgeWriteError } from "@/lib/knowledge";
 import { getActiveSession } from "@/lib/request-session";
 import { resetSessionContent } from "@/lib/session";
 import { markReviewing, parentReply, reopenRequest, staffReply, type RequestStatus, type StaffReplyOutcome } from "@/lib/requests";
@@ -49,4 +51,43 @@ export async function staffReplyAction(requestId: string, input: { staffName: st
 export async function parentReplyAction(requestId: string, body: string): Promise<ActionResult> {
   const session = await getActiveSession();
   return finish(await parentReply(session.id, requestId, body));
+}
+
+// ---- Issue 006: operator knowledge editor. Plain forms; the page re-renders the saved state. ----
+// Saving is a draft. Only "Publish" changes the policy browser and AI grounding.
+
+
+const knowledgeErrorCopy: Record<KnowledgeWriteError, string> = {
+  invalid_title: "Add a title, and keep it short.",
+  invalid_text: "Add the policy text, and keep it under the character limit.",
+  not_found: "This entry is not in your demo session.",
+  nothing_to_publish: "Nothing new to publish. Save a draft first.",
+};
+
+function backToKnowledge(result: { ok: true; entry: { id: string } } | { ok: false; error: KnowledgeWriteError }, done: "saved" | "published"): never {
+  revalidatePath("/", "layout");
+  const q = result.ok ? `${done}=${result.entry.id}` : `error=${encodeURIComponent(knowledgeErrorCopy[result.error])}`;
+  redirect(`/operator?${q}${result.ok ? `#entry-${result.entry.id}` : ""}`);
+}
+
+export async function createKnowledgeAction(formData: FormData): Promise<void> {
+  const session = await getActiveSession();
+  const input = { title: formData.get("title"), policyText: formData.get("policyText") };
+  backToKnowledge(await createKnowledgeDraft(session.id, input as { title: string; policyText: string }), "saved");
+}
+
+export async function saveKnowledgeDraftAction(formData: FormData): Promise<void> {
+  const session = await getActiveSession();
+  const entryId = String(formData.get("entryId") ?? "");
+  const input = { title: formData.get("title"), policyText: formData.get("policyText") };
+  backToKnowledge(await saveKnowledgeDraft(session.id, entryId, input as { title: string; policyText: string }), "saved");
+}
+
+export async function publishKnowledgeAction(formData: FormData): Promise<void> {
+  const session = await getActiveSession();
+  const entryId = String(formData.get("entryId") ?? "");
+  // Publish saves the form's current text first, so what the operator sees is what goes live.
+  const saved = await saveKnowledgeDraft(session.id, entryId, { title: String(formData.get("title") ?? ""), policyText: String(formData.get("policyText") ?? "") });
+  if (!saved.ok) backToKnowledge(saved, "published");
+  backToKnowledge(await publishKnowledge(session.id, entryId), "published");
 }
