@@ -6,7 +6,7 @@ export type Perspective = "parent" | "operator";
 const subnav: Record<Perspective, { href: string; label: string }[]> = {
   parent: [
     { href: "/parent", label: "Conversation" },
-    { href: "/parent/policies", label: "Center policies" },
+    { href: "/parent/policies", label: "Policies" },
   ],
   operator: [
     { href: "/operator/inbox", label: "Inbox" },
@@ -14,40 +14,41 @@ const subnav: Record<Perspective, { href: string; label: string }[]> = {
   ],
 };
 
+// Issue 014: one quiet bar. Center name, section tabs, and the reviewer switch
+// as a small segmented control on the right. Desktop widens; nothing stacks.
 export function PerspectiveNav({ active, current }: { active: Perspective; current?: string }) {
   const tab = (p: Perspective, label: string) => (
     <Link
       href={subnav[p][0].href}
       aria-current={active === p ? "page" : undefined}
       className={
-        "flex-1 rounded-full px-2 py-1 text-center text-sm font-medium transition " +
-        (active === p ? "bg-white text-stone-900 shadow-sm" : "text-stone-600 hover:text-stone-900")
+        "flex min-h-9 flex-1 items-center justify-center rounded-full px-3 text-[13px] font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand " +
+        (active === p ? "bg-ink text-white" : "text-ink-2 hover:text-ink")
       }
     >
       {label}
     </Link>
   );
   return (
-    <header className="sticky top-0 z-20 border-b border-stone-200/80 bg-white/85 backdrop-blur supports-[backdrop-filter]:bg-white/70">
-      <div className="mx-auto max-w-xl px-4 pt-3 pb-2">
-        <div className="flex items-center justify-between gap-3">
-          <div className="min-w-0">
-            <h1 className="truncate text-base font-semibold tracking-tight">{centerConfig.name}</h1>
-            <p className="eyebrow">AI front desk · demo</p>
-          </div>
-          <nav aria-label="Perspective" className="flex w-36 shrink-0 rounded-full bg-stone-100 p-0.5">
-            {tab("parent", "Parent")}
-            {tab("operator", "Operator")}
-          </nav>
+    <header className="sticky top-0 z-20 border-b border-line-soft bg-canvas/85 backdrop-blur supports-[backdrop-filter]:bg-canvas/70">
+      <div className="mx-auto flex w-full max-w-7xl flex-wrap items-center gap-x-4 gap-y-2 px-4 py-2.5 lg:px-8">
+        <div className="min-w-0 flex-1 sm:flex-none">
+          <p className="truncate text-[15px] font-semibold tracking-[-0.01em]">{centerConfig.name}</p>
+          <p className="hidden text-xs text-ink-3 sm:block">{active === "parent" ? "Front desk · answers from published policies" : "Staff"}</p>
         </div>
-        <nav aria-label="Section" className="-mb-2 mt-2 flex gap-5 text-sm">
+        <nav aria-label="Perspective" className="flex w-36 shrink-0 rounded-full bg-surface p-0.5 ring-1 ring-line sm:order-last sm:ml-auto sm:w-40">
+          {tab("parent", "Parent")}
+          {tab("operator", "Staff")}
+        </nav>
+        <nav aria-label="Section" className="flex basis-full gap-1 sm:ml-4 sm:basis-auto">
           {subnav[active].map((s) => (
             <Link
               key={s.href}
               href={s.href}
+              aria-current={current === s.href ? "page" : undefined}
               className={
-                "border-b-2 pb-2 transition " +
-                (current === s.href ? "border-stone-900 font-semibold text-stone-900" : "border-transparent text-stone-500 hover:text-stone-800")
+                "flex min-h-9 items-center rounded-full px-3 text-[13px] font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand " +
+                (current === s.href ? "bg-surface text-ink ring-1 ring-line" : "text-ink-3 hover:text-ink")
               }
             >
               {s.label}

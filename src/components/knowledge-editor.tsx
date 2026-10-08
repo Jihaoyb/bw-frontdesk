@@ -12,7 +12,7 @@ function Fields({ title, policyText }: { title: string; policyText: string }) {
     <div className="space-y-2">
       <label className="block">
         <span className="eyebrow">Title</span>
-        <input name="title" defaultValue={title} required maxLength={MAX_POLICY_TITLE_CHARS} className="field mt-1 py-2" />
+        <input name="title" defaultValue={title} required maxLength={MAX_POLICY_TITLE_CHARS} className="field mt-1 py-2.5" />
       </label>
       <label className="block">
         <span className="eyebrow">Policy text</span>
@@ -38,48 +38,62 @@ export function KnowledgeEditor({
   const published = entries.filter((e) => e.publishedAt).length;
   const drafts = entries.filter((e) => !e.publishedAt || e.draft).length;
   return (
-    <section aria-labelledby="knowledge" className="space-y-3">
+    <section aria-labelledby="knowledge" className="grid gap-6 lg:grid-cols-[300px_minmax(0,1fr)] lg:gap-10">
+      <div className="flex flex-col gap-3 lg:sticky lg:top-20 lg:self-start">
       <div className="flex items-baseline justify-between">
-        <h2 id="knowledge" className="text-base font-semibold tracking-tight">Knowledge</h2>
-        <p className="text-xs text-stone-500">
+        <h2 id="knowledge" className="text-[22px] font-semibold tracking-[-0.02em]">Knowledge</h2>
+        <p className="mono text-xs text-ink-3">
           {published} published{drafts ? ` · ${drafts} with unpublished edits` : ""}
         </p>
       </div>
-      <p className="text-xs text-stone-500">Save keeps a draft. Publish is the only step that changes the policy browser and automated answers.</p>
+      <p className="text-xs text-ink-3">Save keeps a draft. Publish is the only step that changes the policy browser and automated answers.</p>
       {notice?.kind === "error" ? (
-        <p role="alert" className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">{notice.message}</p>
+        <p role="alert" className="rounded-2xl bg-alert-soft px-3.5 py-2 text-sm text-alert">{notice.message}</p>
       ) : null}
+      <nav aria-label="Entries" className="card hidden divide-y divide-line-soft lg:block">
+        {entries.map((e) => (
+          <a key={e.id} href={`#entry-${e.id}`} className="flex items-center gap-2.5 px-3.5 py-2.5 text-sm hover:text-brand-deep focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand">
+            <span aria-hidden className={"h-2 w-2 shrink-0 rounded-full " + (!e.publishedAt ? "bg-ink-3" : e.draft ? "bg-person" : "bg-brand")} />
+            <span className="truncate">{e.title}</span>
+          </a>
+        ))}
+      </nav>
+      </div>
 
+      <div className="flex min-w-0 flex-col gap-2.5">
       <details className="card overflow-hidden">
-        <summary className="cursor-pointer list-none px-4 py-3 text-sm font-medium">+ New entry</summary>
-        <form action={createKnowledgeAction} className="space-y-3 border-t border-stone-100 px-4 py-3">
+        <summary className="flex min-h-12 cursor-pointer list-none items-center px-4 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand">+ New entry</summary>
+        <div className="reveal"><form action={createKnowledgeAction} className="space-y-3 px-4 pb-4">
           <Fields title="" policyText="" />
           <button type="submit" className="btn-ghost">Save draft</button>
-        </form>
+        </form></div>
       </details>
 
-      <ul className="space-y-2">
+      <ul className="space-y-2.5">
         {entries.map((e) => {
           const editing = e.draft ?? { title: e.title, policyText: e.policyText };
           const flagged = notice && notice.kind !== "error" && notice.entryId === e.id ? notice.kind : null;
           return (
             <li key={e.id} id={`entry-${e.id}`}>
-              <details className="group card overflow-hidden" open={flagged !== null} data-entry={e.seedKey ?? "custom"} data-state={!e.publishedAt ? "draft" : e.draft ? "edited" : "published"}>
-                <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-sm font-medium">
-                  <span className="min-w-0">
-                    <span className="block truncate">{e.title}</span>
-                    <span className="mt-0.5 block text-xs font-normal text-stone-500" data-status>{statusLine(e)}</span>
+              <details className="card overflow-hidden" open={flagged !== null} data-entry={e.seedKey ?? "custom"} data-state={!e.publishedAt ? "draft" : e.draft ? "edited" : "published"}>
+                <summary className="flex min-h-12 cursor-pointer list-none items-center justify-between gap-3 px-4 py-2.5 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand">
+                  <span className="flex min-w-0 items-center gap-2.5">
+                    <span aria-hidden className={"h-2 w-2 shrink-0 rounded-full " + (!e.publishedAt ? "bg-ink-3" : e.draft ? "bg-person" : "bg-brand")} />
+                    <span className="min-w-0">
+                      <span className="block truncate">{e.title}</span>
+                      <span className="mt-0.5 block text-xs font-normal text-ink-3" data-status>{statusLine(e)}</span>
+                    </span>
                   </span>
-                  <span aria-hidden className="text-stone-400 transition group-open:rotate-90">›</span>
+                  <svg aria-hidden width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="chev shrink-0 text-ink-3"><path d="M6 9l6 6 6-6" /></svg>
                 </summary>
-                <div className="space-y-3 border-t border-stone-100 bg-stone-50/60 px-4 py-3">
+                <div className="reveal"><div className="space-y-3 border-t border-line-soft px-4 py-4">
                   {flagged ? (
-                    <p role="status" className="text-xs font-medium text-emerald-700">
+                    <p role="status" className="text-xs font-medium text-brand-deep">
                       {flagged === "published" ? "Published. Parents and new answers now use this text." : "Draft saved. Not published yet."}
                     </p>
                   ) : null}
                   {e.publishedAt && e.draft ? (
-                    <div className="rounded-xl border border-stone-200 bg-white px-3 py-2 text-xs text-stone-600">
+                    <div className="rounded-2xl bg-canvas px-3.5 py-2.5 text-xs text-ink-2 ring-1 ring-line">
                       <p className="eyebrow">Currently published</p>
                       <p className="mt-1 whitespace-pre-wrap">{e.policyText}</p>
                     </div>
@@ -87,7 +101,7 @@ export function KnowledgeEditor({
                   <form action={saveKnowledgeDraftAction} id={`form-${e.id}`} className="space-y-3">
                     <input type="hidden" name="entryId" value={e.id} />
                     <Fields title={editing.title} policyText={editing.policyText} />
-                    <p className="text-xs text-stone-600" data-publish-reminder>
+                    <p className="text-xs text-ink-3" data-publish-reminder>
                       Before publishing: this text becomes a center policy that every family and the AI can read. Remove anything about one child, one family, or one day&apos;s situation.
                     </p>
                     <div className="flex flex-wrap gap-2">
@@ -98,12 +112,13 @@ export function KnowledgeEditor({
                     </div>
                     <UnsavedGuard formId={`form-${e.id}`} />
                   </form>
-                </div>
+                </div></div>
               </details>
             </li>
           );
         })}
       </ul>
+      </div>
     </section>
   );
 }

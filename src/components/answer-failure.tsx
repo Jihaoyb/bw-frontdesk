@@ -34,17 +34,17 @@ export function AnswerFailure({ submissionId, question, reason }: { submissionId
   }
 
   return (
-    <div className="rise max-w-[92%] rounded-2xl rounded-bl-md border border-dashed border-stone-300 bg-white/70 px-4 py-3 text-sm" data-outcome="failed">
-      <p className="font-medium text-stone-800">
-        {limited ? "The AI allowance for this demo is used up." : reason === "stale_pending" ? "That answer never came back." : "The front desk couldn't answer just now."}
+    <div className="rise-late flex max-w-[92%] flex-col gap-2.5 rounded-2xl border border-dashed border-line bg-surface/70 px-4 py-3 text-sm" data-outcome="failed">
+      <p className="font-medium text-ink">
+        {limited ? "The AI allowance for this demo is used up." : reason === "stale_pending" ? "That answer never came back." : "The assistant couldn't answer just now."}
       </p>
-      <p className="mt-0.5 text-stone-600">Your question is saved. You can {limited ? "" : "try again, "}browse the policies, or send it to staff.</p>
-      <div className="mt-3 flex flex-wrap gap-2">
+      <p className="text-ink-2">Your question is saved. You can {limited ? "" : "try again, "}browse the policies, or send it to school staff.</p>
+      <div className="flex flex-wrap gap-2">
         {!limited && <button type="button" onClick={retry} disabled={busy} className="btn-primary">Retry</button>}
-        <Link href="/parent/policies" className="btn-ghost">Browse center policies</Link>
-        <button type="button" onClick={askStaff} disabled={busy} className="btn-ghost">Ask staff</button>
+        <Link href="/parent/policies" className="btn-ghost">Browse policies</Link>
+        <button type="button" onClick={askStaff} disabled={busy} className="btn-ghost">Send to school staff</button>
       </div>
-      <div className="mt-2"><DeliveryStatus delivery={delivery} /></div>
+      <DeliveryStatus delivery={delivery} />
     </div>
   );
 }

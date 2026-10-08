@@ -11,11 +11,11 @@ export type Delivery =
 
 export function DeliveryStatus({ delivery }: { delivery: Delivery }) {
   return (
-    <p role="status" aria-live="polite" className="text-sm" data-delivery={delivery.kind}>
-      {delivery.kind === "saving" && <span className="text-stone-500">Saving…</span>}
-      {delivery.kind === "saved" && <span className="text-green-800">Saved.</span>}
-      {delivery.kind === "rejected" && <span className="text-red-800">{delivery.reason}</span>}
-      {delivery.kind === "unconfirmed" && <span className="text-amber-800">We could not confirm this was saved. Your text is kept; try again.</span>}
+    <p role="status" aria-live="polite" className="min-h-5 text-sm empty:hidden" data-delivery={delivery.kind}>
+      {delivery.kind === "saving" && <span className="text-ink-3">Saving…</span>}
+      {delivery.kind === "saved" && <span className="text-brand-deep">Saved.</span>}
+      {delivery.kind === "rejected" && <span className="text-alert">{delivery.reason}</span>}
+      {delivery.kind === "unconfirmed" && <span className="text-person-deep">We could not confirm this was saved. Your text is kept; try again.</span>}
     </p>
   );
 }

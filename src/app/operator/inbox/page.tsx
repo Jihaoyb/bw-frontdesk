@@ -1,84 +1,67 @@
 import Link from "next/link";
+import { InboxList, parseFilter } from "@/components/inbox-list";
 import { messageTime } from "@/components/message-bubble";
 import { OutcomePill } from "@/components/outcome-pill";
 import { PerspectiveNav } from "@/components/perspective-nav";
-import { StatusPill, originLabel } from "@/components/request-card";
 import { listInquiries } from "@/lib/inquiries";
+import { getKnowledgeEntries } from "@/lib/knowledge";
+import { draftEntriesForRequests } from "@/lib/knowledge-loop";
 import { matchCount, matchingCounts } from "@/lib/matching";
-import { draftEntriesForRequests, gapLabel, knowledgeGapState } from "@/lib/knowledge-loop";
 import { listRequests } from "@/lib/requests";
 import { getActiveSession } from "@/lib/request-session";
 
 export const dynamic = "force-dynamic";
 
-export default async function InboxPage() {
+// Issue 014: phone = inbox then history; ≥1024px = inbox list left, history right.
+export default async function InboxPage({ searchParams }: { searchParams: Promise<{ filter?: string }> }) {
+  const { filter: rawFilter } = await searchParams;
+  const filter = parseFilter(rawFilter);
   const session = await getActiveSession();
   const [requests, inquiries] = await Promise.all([listRequests(session.id), listInquiries(session.id)]);
-  const drafts = await draftEntriesForRequests(session.id, requests);
+  const [drafts, policies] = await Promise.all([
+    draftEntriesForRequests(session.id, requests),
+    getKnowledgeEntries(session.id, requests.map((r) => r.knownPolicyEntryId)),
+  ]);
   const counts = matchingCounts(inquiries); // this session only; resets with its content
-  const open = requests.filter((r) => r.status !== "closed").length;
+  // Match count per request: the count of its own question text in the history.
+  const requestCounts = new Map(requests.map((r) => [r.id, matchCount(counts, r)]));
   return (
     <>
       <PerspectiveNav active="operator" current="/operator/inbox" />
-      <main className="mx-auto w-full max-w-xl flex-1 space-y-8 px-4 py-4">
-        <section aria-labelledby="inbox">
-          <div className="flex items-baseline justify-between">
-            <h2 id="inbox" className="text-base font-semibold tracking-tight">Staff requests</h2>
-            <p className="text-xs text-stone-500">{open} open · {requests.length} total</p>
-          </div>
-          <p className="mt-1 text-xs text-stone-500">Opening a request does not mark it reviewed.</p>
-          {requests.length === 0 && <p className="card mt-3 p-4 text-sm text-stone-500">No requests yet.</p>}
-          <ul className="mt-3 space-y-2">
-            {requests.map((r) => (
-              <li key={r.id}>
-                <Link href={`/operator/inbox/${r.id}`} className="card block p-3.5 text-sm transition hover:border-stone-300">
-                  <div className="flex flex-wrap items-center gap-2 text-xs">
-                    <StatusPill status={r.status} />
-                    <span className={"pill " + (r.origin === "sensitive" ? "bg-red-50 text-red-900 ring-1 ring-red-200" : "bg-stone-100 text-stone-600")} data-origin={r.origin}>{originLabel[r.origin]}</span>
-                    {(() => {
-                      const gap = knowledgeGapState(r, drafts.get(r.id) ?? null);
-                      if (gap === "none") return null;
-                      const tone = gap === "published" ? "bg-emerald-50 text-emerald-900" : gap === "draft" ? "bg-amber-50 text-amber-900" : "bg-stone-100 text-stone-600";
-                      return <span className={"pill " + tone} data-gap={gap}>{gapLabel[gap]}</span>;
-                    })()}
-                    <span className="ml-auto text-stone-500">{messageTime.format(r.createdAt)}</span>
-                  </div>
-                  <p className="mt-2 line-clamp-2 whitespace-pre-wrap font-medium">{r.question}</p>
-                </Link>
-              </li>
-            ))}
-          </ul>
-        </section>
+      <div className="mx-auto grid w-full max-w-7xl flex-1 gap-10 px-4 py-5 lg:grid-cols-[400px_minmax(0,1fr)] lg:px-8">
+        <InboxList requests={requests} drafts={drafts} policies={policies} counts={requestCounts} filter={filter} />
 
-        <section aria-labelledby="history">
+        <section aria-labelledby="history" className="flex min-w-0 flex-col gap-3">
           <div className="flex items-baseline justify-between">
-            <h2 id="history" className="text-base font-semibold tracking-tight">Question history</h2>
-            <p className="text-xs text-stone-500">{inquiries.length} question{inquiries.length === 1 ? "" : "s"}</p>
+            <h2 id="history" className="text-[22px] font-semibold tracking-[-0.02em]">Question history</h2>
+            <p className="mono text-xs text-ink-3">{inquiries.length} question{inquiries.length === 1 ? "" : "s"}</p>
           </div>
-          <p className="mt-1 text-xs text-stone-500">
+          <p className="text-xs text-ink-3">
             Every parent question in this demo session and how the front desk handled it. A count marks normalized matching questions: the same wording
             ignoring capitalization, spacing, and punctuation. Different wording is not grouped, and matching requests stay separate.
           </p>
-          {inquiries.length === 0 && <p className="card mt-3 p-4 text-sm text-stone-500">No questions yet.</p>}
-          <ul className="card mt-3 divide-y divide-stone-100">
-            {inquiries.map((q) => (
-              <li key={q.id} className="flex items-start gap-3 px-4 py-3 text-sm" data-inquiry={q.id}>
-                <div className="min-w-0 flex-1">
-                  <p className="line-clamp-2 whitespace-pre-wrap">{q.question}</p>
-                  <p className="mt-1 text-xs text-stone-500">
-                    {messageTime.format(q.createdAt)}
-                    {matchCount(counts, q) > 1 && (
-                      <> · <span className="pill bg-stone-100 text-stone-700" data-matching={matchCount(counts, q)}>{matchCount(counts, q)} normalized matching questions</span></>
-                    )}
-                    {q.requestId && <> · <Link href={`/operator/inbox/${q.requestId}`} className="underline decoration-stone-300 underline-offset-2">open request</Link></>}
-                  </p>
-                </div>
-                <OutcomePill outcome={q.outcome} />
-              </li>
-            ))}
-          </ul>
+          {inquiries.length === 0 && <p className="card p-4 text-sm text-ink-3">No questions yet.</p>}
+          {inquiries.length > 0 && (
+            <ul className="card divide-y divide-line-soft">
+              {inquiries.map((q) => (
+                <li key={q.id} className="flex items-start gap-3 px-4 py-3 text-sm" data-inquiry={q.id}>
+                  <div className="min-w-0 flex-1">
+                    <p className="line-clamp-2 whitespace-pre-wrap">{q.question}</p>
+                    <p className="mt-1 flex flex-wrap items-center gap-x-2 text-xs text-ink-3">
+                      <span className="mono">{messageTime.format(q.createdAt)}</span>
+                      {matchCount(counts, q) > 1 && (
+                        <span className="pill bg-canvas text-ink-2 ring-1 ring-line" data-matching={matchCount(counts, q)}>{matchCount(counts, q)} normalized matching questions</span>
+                      )}
+                      {q.requestId && <Link href={`/operator/inbox/${q.requestId}`} className="underline decoration-line underline-offset-2 hover:decoration-ink-3">open request</Link>}
+                    </p>
+                  </div>
+                  <OutcomePill outcome={q.outcome} />
+                </li>
+              ))}
+            </ul>
+          )}
         </section>
-      </main>
+      </div>
     </>
   );
 }

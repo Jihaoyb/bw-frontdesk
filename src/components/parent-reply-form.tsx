@@ -26,17 +26,17 @@ export function ParentReplyForm({ requestId, maxChars, closed }: { requestId: st
   }
 
   return (
-    <form onSubmit={submit} className="card p-3" aria-label="Reply to staff on this request">
+    <form onSubmit={submit} className="flex flex-col gap-2 rounded-[22px] border border-line bg-surface p-3 shadow-float focus-within:border-person focus-within:ring-2 focus-within:ring-person/30" aria-label="Reply to staff on this request">
       <label htmlFor={`reply-${requestId}`} className="eyebrow">
         {closed ? "Add to this request (reopens it)" : "Add details for staff"}
       </label>
       <textarea
         id={`reply-${requestId}`} value={body} onChange={(e) => setBody(e.target.value)} rows={2} disabled={busy}
         maxLength={maxChars * 2} placeholder="Add details or a follow-up question"
-        className="field mt-2"
+        className="field mt-1 rounded-2xl border-0 bg-canvas focus:ring-0"
       />
       <div className="mt-2 flex items-center gap-3">
-        <button type="submit" disabled={busy} className="btn-primary">
+        <button type="submit" disabled={busy} className="btn-person">
           {closed ? "Reply and reopen" : "Send to staff"}
         </button>
         <DeliveryStatus delivery={delivery} />

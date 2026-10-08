@@ -4,7 +4,6 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { markReviewingAction, openKnowledgeDraftAction, reopenRequestAction, staffReplyAction } from "@/app/actions";
 import type { RequestStatus, StaffReplyOutcome } from "@/lib/requests";
-import { StatusPill } from "./request-card";
 import { deliver, DeliveryStatus, type Delivery } from "./delivery-status";
 
 // Explicit staff actions. Opening the request page records nothing; only the
@@ -12,7 +11,7 @@ import { deliver, DeliveryStatus, type Delivery } from "./delivery-status";
 // knowledge draft is a separate action. Close has no confirmation modal; Reopen is the undo.
 
 const resolutionOptions: { value: StaffReplyOutcome; label: string }[] = [
-  { value: "reply", label: "Keep it open" },
+  { value: "reply", label: "Keep open" },
   { value: "needs_your_reply", label: "Ask the family to reply" },
   { value: "close", label: "Close the request" },
 ];
@@ -69,53 +68,53 @@ export function StaffReplyPanel({ requestId, status, staffNames, maxChars, canDr
   }
 
   return (
-    <section aria-labelledby="staff-actions" className="card p-4 text-sm">
+    <section aria-labelledby="staff-actions" className="sheet card flex flex-col gap-3 p-4 text-sm lg:animate-none">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h3 id="staff-actions" className="text-base font-semibold tracking-tight">Reply to the family</h3>
-        <StatusPill status={status} />
+        <h3 id="staff-actions" className="text-base font-semibold tracking-[-0.01em]">Reply as <span className="text-person-deep">{staffName}</span></h3>
+        <div className="flex gap-2">
+          {!closed && status !== "staff_reviewing" && (
+            <button type="button" disabled={busy} onClick={() => run(() => markReviewingAction(requestId))} className="chip">Mark reviewing</button>
+          )}
+          {closed && (
+            <button type="button" disabled={busy} onClick={() => run(() => reopenRequestAction(requestId))} className="chip">Reopen</button>
+          )}
+        </div>
       </div>
-      <div className="mt-3 flex flex-wrap gap-2">
-        {!closed && status !== "staff_reviewing" && (
-          <button type="button" disabled={busy} onClick={() => run(() => markReviewingAction(requestId))} className="btn-ghost">
-            Mark reviewing
-          </button>
-        )}
-        {closed && (
-          <button type="button" disabled={busy} onClick={() => run(() => reopenRequestAction(requestId))} className="btn-ghost">
-            Reopen
-          </button>
-        )}
+      <div className="grid gap-3 sm:grid-cols-[auto_minmax(0,1fr)] sm:items-start">
+        <label className="flex flex-col gap-1">
+          <span className="eyebrow">Replying as</span>
+          <select id="staff-name" value={staffName} onChange={(e) => setStaffName(e.target.value)} disabled={busy} className="field min-h-11 w-auto py-2">
+            {staffNames.map((n) => <option key={n} value={n}>{n}</option>)}
+          </select>
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className="eyebrow">Message</span>
+          <textarea id="staff-body" value={body} onChange={(e) => setBody(e.target.value)} rows={3} disabled={busy} maxLength={maxChars * 2}
+            placeholder="Write to this family" className="field" />
+          <span className="mono text-[11px] text-ink-3">{body.trim().length}/{maxChars} · goes to this family only; it does not change center policies</span>
+        </label>
       </div>
-      <label htmlFor="staff-name" className="eyebrow mt-4 block">Replying as</label>
-      <select id="staff-name" value={staffName} onChange={(e) => setStaffName(e.target.value)} disabled={busy}
-        className="field mt-1 w-auto py-2">
-        {staffNames.map((n) => <option key={n} value={n}>{n}</option>)}
-      </select>
-      <label htmlFor="staff-body" className="eyebrow mt-3 block">Message</label>
-      <textarea id="staff-body" value={body} onChange={(e) => setBody(e.target.value)} rows={3} disabled={busy} maxLength={maxChars * 2}
-        placeholder="Write a reply to this family" className="field mt-1" />
-      <p className="mt-1 text-xs text-stone-600">{body.trim().length}/{maxChars}. This reply goes to this family only; it does not change center policies.</p>
-      <fieldset className="mt-3">
+      <fieldset className="flex flex-col gap-2">
         <legend className="eyebrow">After sending</legend>
-        <div className="mt-1 flex flex-col gap-1.5 sm:flex-row sm:flex-wrap sm:gap-4">
+        <div className="flex flex-wrap gap-2">
           {resolutionOptions.map((o) => (
-            <label key={o.value} className="flex min-h-11 cursor-pointer items-center gap-2 text-sm">
-              <input type="radio" name="outcome" value={o.value} checked={outcome === o.value} onChange={() => setOutcome(o.value)} disabled={busy} className="h-4 w-4 accent-stone-900" />
+            <label key={o.value} className={"chip cursor-pointer " + (outcome === o.value ? "chip-on" : "")}>
+              <input type="radio" name="outcome" value={o.value} checked={outcome === o.value} onChange={() => setOutcome(o.value)} disabled={busy} className="sr-only" />
               {o.label}
             </label>
           ))}
         </div>
-        <p className="mt-1 text-xs text-stone-600" data-outcome-help={outcome}>{resolutionHelp[outcome]}</p>
+        <p className="text-xs text-ink-3" data-outcome-help={outcome}>{resolutionHelp[outcome]}</p>
       </fieldset>
-      <div className="mt-3 flex flex-wrap gap-2">
-        <button type="button" disabled={busy} onClick={() => send(outcome)} className="btn-primary">Send reply</button>
+      <div className="flex flex-wrap gap-2">
+        <button type="button" disabled={busy} onClick={() => send(outcome)} className="btn-person flex-1 sm:flex-none sm:px-6">Send reply</button>
         {canDraft && (
           <button type="button" disabled={busy} onClick={sendAndDraft} className="btn-ghost" data-action="send-and-draft">
             Send &amp; open knowledge draft
           </button>
         )}
       </div>
-      <div className="mt-2"><DeliveryStatus delivery={delivery} /></div>
+      <DeliveryStatus delivery={delivery} />
     </section>
   );
 }

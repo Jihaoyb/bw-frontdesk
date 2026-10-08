@@ -42,7 +42,7 @@ describe("recipient naming", () => {
     const m: Message = { id: "m1", conversationId: "c1", requestId: null, speaker: "assistant", staffName: null, body: "Closed on Labor Day.", createdAt: now };
     const text = strip(renderToStaticMarkup(createElement(MessageBubble, { message: m, viewer: "parent" })));
     expect(text).toContain("AI assistant");
-    expect(text).toContain("Automated");
+    expect(text).toMatch(/automated/i);
     expect(text).not.toMatch(/front desk/i);
   });
 });

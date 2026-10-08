@@ -6,17 +6,17 @@ export function ResetDemo({ confirming, resetCount }: { confirming: boolean; res
   return (
     <section aria-labelledby="reset" className="card p-4">
       <h2 id="reset" className="text-sm font-semibold">Reset demo</h2>
-      <p className="mt-1 text-xs text-stone-500">
+      <p className="mt-1 text-xs text-ink-3">
         Restores this demo session&apos;s starting policies. Other visitors&apos; sessions are not affected.
         {resetCount > 0 ? ` Reset ${resetCount} time${resetCount === 1 ? "" : "s"} so far.` : ""}
       </p>
       {confirming ? (
-        <div className="mt-3 rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm">
+        <div className="mt-3 rounded-2xl bg-alert-soft p-3.5 text-sm text-ink">
           <p className="font-medium">Reset this demo session? This removes the session&apos;s work and cannot be undone.</p>
           <div className="mt-3 flex gap-2">
             <form action={resetDemoAction}>
               <input type="hidden" name="confirm" value="yes" />
-              <button type="submit" className="btn-primary bg-red-700 hover:bg-red-800">
+              <button type="submit" className="btn-primary bg-alert hover:bg-[#8f1c13]">
                 Yes, reset
               </button>
             </form>

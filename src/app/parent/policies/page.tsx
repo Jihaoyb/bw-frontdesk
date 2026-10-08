@@ -12,10 +12,13 @@ export default async function ParentPoliciesPage() {
   return (
     <>
       <PerspectiveNav active="parent" current="/parent/policies" />
-      <main className="mx-auto w-full max-w-xl flex-1 space-y-4 px-4 py-4">
-        <CenterInfo />
-        <PolicyList entries={entries} />
-      </main>
+      <div className="mx-auto flex w-full max-w-7xl flex-1 gap-10 px-4 py-5 lg:px-8">
+        <main className="flex w-full min-w-0 max-w-[680px] flex-1 flex-col gap-6">
+          <PolicyList entries={entries} />
+          <div className="lg:hidden"><CenterInfo /></div>
+        </main>
+        <aside className="hidden w-[320px] shrink-0 lg:block"><div className="sticky top-20"><CenterInfo /></div></aside>
+      </div>
     </>
   );
 }
