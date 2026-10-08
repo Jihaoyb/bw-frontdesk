@@ -2,6 +2,7 @@
 // active session. The model never writes the database; this module does.
 import type { PoolClient } from "pg";
 import { answerQuestion, type AnswerResult } from "./answer-service";
+import { randomUUID } from "node:crypto";
 import { getPool } from "./db";
 import { listPublishedKnowledge, type KnowledgeEntry } from "./knowledge";
 import { MODEL_TIMEOUT_MS, CONTEXT_TURNS } from "./limits";
@@ -152,51 +153,50 @@ export async function askFrontDesk(
 type Claimed = Inquiry & { fresh: boolean };
 
 async function claimInquiry(sessionId: string, submissionId: string, question: string): Promise<Claimed> {
-  const client = await getPool().connect();
-  try {
-    await client.query("BEGIN");
-    const conversationId = await getOrCreateConversation(sessionId, client);
-    const claimed = await client.query<InquiryRow>(
-      `INSERT INTO inquiries (session_id, conversation_id, submission_id, question, outcome) VALUES ($1, $2, $3, $4, 'pending')
-       ON CONFLICT (session_id, submission_id) DO NOTHING RETURNING ${COLS}`,
-      [sessionId, conversationId, submissionId, question],
-    );
-    if (!claimed.rowCount) {
-      await client.query("ROLLBACK");
-      // Same connection on purpose (see createStaffRequest): never hold one
-      // client while waiting for another.
-      const existing = await client.query<InquiryRow>(
-        `SELECT ${COLS} FROM inquiries WHERE session_id = $1 AND submission_id = $2`, [sessionId, submissionId]);
-      const row = toInquiry(existing.rows[0]);
-      if (row.outcome === "failed" || row.outcome === "pending") {
-        // Retry: a failed row goes back to pending so a concurrent duplicate
-        // sees in-flight work. A pending row is reclaimed only once it is stale
-        // (older than the model timeout plus grace): the process that claimed
-        // it died mid-flight, and nothing else will ever finish it.
-        const again = await client.query<InquiryRow>(
-          `UPDATE inquiries SET outcome = 'pending', failure_reason = NULL, updated_at = now()
-           WHERE id = $1 AND session_id = $2
-             AND (outcome = 'failed' OR (outcome = 'pending' AND updated_at < now() - ($3::int * interval '1 millisecond')))
-           RETURNING ${COLS}`, [row.id, sessionId, STALE_PENDING_MS]);
-        if (again.rows[0]) return { ...toInquiry(again.rows[0]), fresh: true };
-        return { ...row, outcome: "pending", fresh: false };
-      }
-      return { ...row, fresh: false };
+  // One statement for the common case: insert the inquiry and its parent
+  // message, linked by ids generated here (a statement cannot read rows its
+  // own CTEs inserted, so the link cannot be an UPDATE). A duplicate
+  // submission inserts nothing and falls through.
+  const inquiryId = randomUUID();
+  const messageId = randomUUID();
+  const claimSql = `
+    WITH conv AS (SELECT id FROM conversations WHERE session_id = $1 ORDER BY created_at LIMIT 1),
+         q AS (INSERT INTO inquiries (id, session_id, conversation_id, submission_id, question, outcome, question_message_id)
+               SELECT $4, $1, conv.id, $2, $3, 'pending', $5 FROM conv
+               ON CONFLICT (session_id, submission_id) DO NOTHING RETURNING ${COLS}, conversation_id),
+         m AS (INSERT INTO messages (id, session_id, conversation_id, speaker, body)
+               SELECT $5, $1, q.conversation_id, 'parent', $3 FROM q RETURNING id)
+    SELECT ${COLS} FROM q`;
+  const params = [sessionId, submissionId, question, inquiryId, messageId];
+  let claimed = await getPool().query<InquiryRow>(claimSql, params);
+  if (!claimed.rowCount) {
+    const existing = await getPool().query<InquiryRow>(
+      `SELECT ${COLS} FROM inquiries WHERE session_id = $1 AND submission_id = $2`, [sessionId, submissionId]);
+    if (!existing.rows[0]) {
+      // No conversation yet (session predates seeding one): create it, claim again.
+      await getOrCreateConversation(sessionId);
+      claimed = await getPool().query<InquiryRow>(claimSql, params);
+      if (claimed.rows[0]) return { ...toInquiry(claimed.rows[0]), fresh: true };
+      const raced = await getPool().query<InquiryRow>(`SELECT ${COLS} FROM inquiries WHERE session_id = $1 AND submission_id = $2`, [sessionId, submissionId]);
+      existing.rows[0] = raced.rows[0];
     }
-    const msg = await client.query<{ id: string }>(
-      `INSERT INTO messages (session_id, conversation_id, speaker, body) VALUES ($1, $2, 'parent', $3) RETURNING id`,
-      [sessionId, conversationId, question],
-    );
-    const updated = await client.query<InquiryRow>(
-      `UPDATE inquiries SET question_message_id = $1 WHERE id = $2 RETURNING ${COLS}`, [msg.rows[0].id, claimed.rows[0].id]);
-    await client.query("COMMIT");
-    return { ...toInquiry(updated.rows[0]), fresh: true };
-  } catch (err) {
-    await client.query("ROLLBACK").catch(() => undefined);
-    throw err;
-  } finally {
-    client.release();
+    const row = toInquiry(existing.rows[0]);
+    if (row.outcome === "failed" || row.outcome === "pending") {
+      // Retry: a failed row goes back to pending so a concurrent duplicate
+      // sees in-flight work. A pending row is reclaimed only once it is stale
+      // (older than the model timeout plus grace): the process that claimed
+      // it died mid-flight, and nothing else will ever finish it.
+      const again = await getPool().query<InquiryRow>(
+        `UPDATE inquiries SET outcome = 'pending', failure_reason = NULL, updated_at = now()
+         WHERE id = $1 AND session_id = $2
+           AND (outcome = 'failed' OR (outcome = 'pending' AND updated_at < now() - ($3::int * interval '1 millisecond')))
+         RETURNING ${COLS}`, [row.id, sessionId, STALE_PENDING_MS]);
+      if (again.rows[0]) return { ...toInquiry(again.rows[0]), fresh: true };
+      return { ...row, outcome: "pending", fresh: false };
+    }
+    return { ...row, fresh: false };
   }
+  return { ...toInquiry(claimed.rows[0]), fresh: true };
 }
 
 async function recentTurns(sessionId: string, excludeMessageId: string | null) {
@@ -237,17 +237,19 @@ async function persistResult(sessionId: string, inquiry: Inquiry, result: Answer
   let saved: { inquiry: Inquiry; message: Message; sources: Evidence[] };
   try {
     await client.query("BEGIN");
-    const conv = await client.query<{ conversation_id: string }>("SELECT conversation_id FROM inquiries WHERE id = $1", [inquiry.id]);
     const msg = await client.query<MessageRow>(
-      `INSERT INTO messages (session_id, conversation_id, speaker, body) VALUES ($1, $2, 'assistant', $3) RETURNING ${MSG_COLS}`,
-      [sessionId, conv.rows[0].conversation_id, result.text]);
-    const evidence: Evidence[] = [];
-    for (const [i, k] of sources.entries()) {
+      `INSERT INTO messages (session_id, conversation_id, speaker, body)
+       SELECT $1, conversation_id, 'assistant', $3 FROM inquiries WHERE id = $2 AND session_id = $1 RETURNING ${MSG_COLS}`,
+      [sessionId, inquiry.id, result.text]);
+    let evidence: Evidence[] = [];
+    if (sources.length) {
       const ev = await client.query<EvidenceRow>(
         `INSERT INTO answer_evidence (session_id, message_id, entry_id, title, policy_text, published_at, position)
-         VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id, message_id, entry_id, title, policy_text, published_at`,
-        [sessionId, msg.rows[0].id, k.id, k.title, k.policyText, k.publishedAt, i]);
-      evidence.push(toEvidence(ev.rows[0]));
+         SELECT $1, $2, e.entry_id, e.title, e.policy_text, e.published_at, e.position
+         FROM unnest($3::uuid[], $4::text[], $5::text[], $6::timestamptz[], $7::int[]) AS e(entry_id, title, policy_text, published_at, position)
+         ORDER BY e.position RETURNING id, message_id, entry_id, title, policy_text, published_at`,
+        [sessionId, msg.rows[0].id, sources.map((k) => k.id), sources.map((k) => k.title), sources.map((k) => k.policyText), sources.map((k) => k.publishedAt), sources.map((_, i) => i)]);
+      evidence = ev.rows.sort((a, b) => sources.findIndex((k) => k.id === a.entry_id) - sources.findIndex((k) => k.id === b.entry_id)).map(toEvidence);
     }
     const upd = await client.query<InquiryRow>(
       `UPDATE inquiries SET outcome = $3, answer_message_id = $4, failure_reason = NULL, updated_at = now()

@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import type { UsageSnapshot } from "@/lib/usage";
 import { DeliveryStatus, type Delivery } from "./delivery-status";
 import { keyFacts, shouldSendOnEnter } from "@/lib/compose-keys";
@@ -17,6 +17,14 @@ export function Composer({ maxChars, usage, aiEnabled }: { maxChars: number; usa
   const [submissionId, setSubmissionId] = useState<string | null>(null);
   const [delivery, setDelivery] = useState<Delivery>({ kind: "idle" });
   const [notice, setNotice] = useState<string | null>(null);
+  // Optimistic turn (issue 013): the parent's message and a recipient-specific
+  // indicator render immediately; the saved turn replaces them after refresh.
+  const [pending, setPending] = useState<{ text: string; mode: Mode } | null>(null);
+  const [refreshing, startRefresh] = useTransition();
+  const [clearAfterRefresh, setClearAfterRefresh] = useState(false);
+  useEffect(() => {
+    if (clearAfterRefresh && !refreshing) { setPending(null); setClearAfterRefresh(false); }
+  }, [clearAfterRefresh, refreshing]);
   const ref = useRef<HTMLTextAreaElement>(null);
 
   const exhausted = usage.sessionUsed >= usage.sessionLimit || usage.dailyUsed >= usage.dailyLimit;
@@ -34,6 +42,7 @@ export function Composer({ maxChars, usage, aiEnabled }: { maxChars: number; usa
     setSubmissionId(id);
     setDelivery({ kind: "saving" });
     setNotice(null);
+    setPending({ text: trimmed, mode });
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), mode === "ask" ? 30000 : 10000);
     try {
@@ -44,6 +53,7 @@ export function Composer({ maxChars, usage, aiEnabled }: { maxChars: number; usa
       const data = await res.json().catch(() => ({}));
       if (res.status === 400) {
         const reason = typeof data?.error === "string" ? data.error : data?.error?.reason ?? "not accepted";
+        setPending(null);
         return setDelivery({ kind: "rejected", reason: `Not saved: ${reason}.` });
       }
       if (res.status === 429) {
@@ -52,6 +62,7 @@ export function Composer({ maxChars, usage, aiEnabled }: { maxChars: number; usa
       }
       if (res.status === 503) {
         setNotice("AI answers are turned off for this demo right now. You can still ask staff.");
+        setPending(null);
         return setDelivery({ kind: "idle" });
       }
       if (res.ok) { done(); return; }
@@ -65,6 +76,7 @@ export function Composer({ maxChars, usage, aiEnabled }: { maxChars: number; usa
 
   function editInstead() {
     setSubmissionId(null);
+    setPending(null);
     setDelivery({ kind: "idle" });
     setNotice("Starting a new question. If the earlier one did save, it will show up after a refresh.");
     ref.current?.focus();
@@ -74,11 +86,13 @@ export function Composer({ maxChars, usage, aiEnabled }: { maxChars: number; usa
     setDelivery({ kind: "saved" });
     setText("");
     setSubmissionId(null);
-    router.refresh();
+    setClearAfterRefresh(true); // keep the optimistic turn until the saved one is on screen
+    startRefresh(() => router.refresh());
   }
 
   return (
     <div className="sticky bottom-0 z-10 -mx-4 border-t border-stone-200/80 bg-canvas/90 px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 backdrop-blur">
+      {pending && <PendingTurn text={pending.text} mode={pending.mode} unconfirmed={unconfirmed} />}
       {notice && <p role="status" className="mb-2 rounded-xl bg-amber-50 px-3 py-2 text-sm text-amber-900 ring-1 ring-amber-200">{notice}</p>}
       {!aiAvailable && !notice && (
         <p className="mb-2 rounded-xl bg-stone-100 px-3 py-2 text-sm text-stone-700">
@@ -116,6 +130,34 @@ export function Composer({ maxChars, usage, aiEnabled }: { maxChars: number; usa
         </div>
       </form>
       <div className="mt-1.5 min-h-5 px-1"><DeliveryStatus delivery={delivery} /></div>
+    </div>
+  );
+}
+
+// The optimistic turn: the parent's bubble plus who is handling it. Copy names
+// the recipient and never claims a person is reading it now.
+function PendingTurn({ text, mode, unconfirmed }: { text: string; mode: Mode; unconfirmed: boolean }) {
+  return (
+    <div className="mb-3 space-y-2" data-pending={mode} aria-live="polite">
+      <div className="flex justify-end">
+        <div className="max-w-[92%] rounded-2xl rounded-br-md bg-stone-900 px-4 py-3 text-[15px] leading-relaxed text-white">
+          <p className="whitespace-pre-wrap">{text}</p>
+        </div>
+      </div>
+      <div className="flex items-center gap-2 px-1 text-xs text-stone-600">
+        {!unconfirmed && (
+          <span aria-hidden className="inline-flex gap-0.5">
+            <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-stone-400 [animation-delay:-0.3s]" />
+            <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-stone-400 [animation-delay:-0.15s]" />
+            <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-stone-400" />
+          </span>
+        )}
+        <span>
+          {unconfirmed
+            ? "Not confirmed yet. Retry sends the same message once; Edit instead starts a new one."
+            : mode === "ask" ? "AI assistant is answering…" : "Saving your message for school staff…"}
+        </span>
+      </div>
     </div>
   );
 }

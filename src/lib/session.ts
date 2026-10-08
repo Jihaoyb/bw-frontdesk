@@ -16,6 +16,9 @@ export function newSessionId(): string {
 export type DemoSession = { id: string; createdAt: Date; resetCount: number };
 
 async function seedSessionContent(client: PoolClient, sessionId: string): Promise<void> {
+  // One conversation per session, created up front so the ask path can insert
+  // a question in a single statement.
+  await client.query("INSERT INTO conversations (session_id) VALUES ($1)", [sessionId]);
   for (const [i, entry] of seedKnowledge.entries()) {
     await client.query(
       `INSERT INTO knowledge_entries (session_id, seed_key, title, policy_text, published_at, sort_order)
@@ -28,6 +31,9 @@ async function seedSessionContent(client: PoolClient, sessionId: string): Promis
 /** Resolve the session row for an id, creating and seeding it on first use. */
 export async function ensureSession(sessionId: string): Promise<DemoSession> {
   if (!isSessionId(sessionId)) throw new Error("invalid session id");
+  // Fast path (every request after the first): one round trip, no transaction.
+  const found = await getPool().query("SELECT id, created_at, reset_count FROM demo_sessions WHERE id = $1", [sessionId]);
+  if (found.rows[0]) return { id: found.rows[0].id, createdAt: found.rows[0].created_at, resetCount: found.rows[0].reset_count };
   const client = await getPool().connect();
   try {
     await client.query("BEGIN");

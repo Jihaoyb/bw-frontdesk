@@ -8,7 +8,7 @@ export const MAX_QUESTION_CHARS = intFromEnv("MAX_QUESTION_CHARS", 1000);
 /** Longest answer text accepted from the model; longer output is treated as a failure. */
 export const MAX_ANSWER_CHARS = intFromEnv("MAX_ANSWER_CHARS", 1500);
 /** Output token cap sent to the model. */
-export const MAX_ANSWER_TOKENS = intFromEnv("MAX_ANSWER_TOKENS", 500);
+export const MAX_ANSWER_TOKENS = intFromEnv("MAX_ANSWER_TOKENS", 300);
 /** How long one model call may take before it counts as a failure. */
 export const MODEL_TIMEOUT_MS = intFromEnv("MODEL_TIMEOUT_MS", 20000);
 /** Operator knowledge editor bounds. */
