@@ -37,7 +37,11 @@ export default async function RequestPage({ params }: { params: Promise<{ id: st
           </ol>
         </section>
         <StaffReplyPanel requestId={request.id} status={request.status} staffNames={STAFF_NAMES} maxChars={MAX_QUESTION_CHARS} />
-        <p className="text-xs text-stone-500">Viewing this page records nothing. Replies and closing do not publish knowledge.</p>
+        <p className="text-xs text-stone-500" data-knowledge-note={request.origin === "sensitive" ? "none" : "gap"}>
+          {request.origin === "sensitive"
+            ? "Sensitive request: handled by staff directly. No knowledge update is suggested."
+            : "Viewing this page records nothing. Replies and closing do not publish knowledge; a reply alone leaves the knowledge gap open."}
+        </p>
       </main>
     </>
   );

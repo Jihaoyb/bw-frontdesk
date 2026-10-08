@@ -85,7 +85,7 @@ export async function getOrCreateConversation(sessionId: string, client?: PoolCl
   return created.rows[0].id;
 }
 
-export type CreateRequestInput = { submissionId: string; question: string; origin: RequestOrigin };
+export type CreateRequestInput = { submissionId: string; question: string; origin: RequestOrigin; knownPolicyEntryId?: string | null };
 export type CreateRequestResult = { request: StaffRequest; created: boolean };
 
 /**
@@ -106,11 +106,11 @@ export async function createStaffRequest(sessionId: string, input: CreateRequest
     // Claim the submission identity first; a concurrent duplicate blocks here
     // until we commit, then sees the conflict and returns nothing.
     const claimed = await client.query<RequestRow>(
-      `INSERT INTO staff_requests (session_id, conversation_id, submission_id, question, origin)
-       VALUES ($1, $2, $3, $4, $5)
+      `INSERT INTO staff_requests (session_id, conversation_id, submission_id, question, origin, known_policy_entry_id)
+       VALUES ($1, $2, $3, $4, $5, (SELECT id FROM knowledge_entries WHERE id = $6::uuid AND session_id = $1))
        ON CONFLICT (session_id, submission_id) DO NOTHING
        RETURNING ${REQUEST_COLS}`,
-      [sessionId, conversationId, input.submissionId, v.question, input.origin],
+      [sessionId, conversationId, input.submissionId, v.question, input.origin, input.knownPolicyEntryId && UUID_RE.test(input.knownPolicyEntryId) ? input.knownPolicyEntryId : null],
     );
     if (!claimed.rowCount) {
       await client.query("ROLLBACK");
@@ -119,8 +119,9 @@ export async function createStaffRequest(sessionId: string, input: CreateRequest
         [sessionId, input.submissionId]);
       return { request: toRequest(existing.rows[0]), created: false };
     }
-    // If this question was already saved by the front desk flow (failed answer →
-    // Ask staff), attach the request to that message instead of saving it twice.
+    // If this question was already saved by the front desk flow (failed answer,
+    // handoff offer, sensitive, or explicit staff intent → Ask staff), attach the
+    // request to that message instead of saving it twice.
     const prior = await client.query<{ question_message_id: string | null }>(
       "SELECT question_message_id FROM inquiries WHERE session_id = $1 AND submission_id = $2", [sessionId, input.submissionId]);
     const msg = prior.rows[0]?.question_message_id

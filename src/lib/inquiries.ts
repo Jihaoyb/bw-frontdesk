@@ -5,7 +5,7 @@ import { answerQuestion, type AnswerResult } from "./answer-service";
 import { getPool } from "./db";
 import { listPublishedKnowledge, type KnowledgeEntry } from "./knowledge";
 import { CONTEXT_TURNS } from "./limits";
-import { getOrCreateConversation, validateQuestion, validateSubmissionId, type Message } from "./requests";
+import { createStaffRequest, getOrCreateConversation, getRequest, validateQuestion, validateSubmissionId, type Message, type RequestOrigin, type StaffRequest } from "./requests";
 import { consumeAllowance, type UsageSnapshot } from "./usage";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -50,7 +50,11 @@ const toMessage = (r: MessageRow): Message => ({
 });
 const MSG_COLS = "id, conversation_id, request_id, speaker, staff_name, body, created_at";
 
-/** Record a question that went straight to staff (issue 002 path) in the history. */
+/**
+ * Record a staff request on the question history. A direct request (issue 002
+ * path) is its own outcome; a request raised after a handoff offer, a sensitive
+ * acknowledgment, or a failed answer keeps that outcome and gains the request link.
+ */
 export async function recordStaffRequestInquiry(
   client: PoolClient, sessionId: string, input: { conversationId: string; submissionId: string; questionMessageId: string; requestId: string; question: string },
 ): Promise<void> {
@@ -58,8 +62,9 @@ export async function recordStaffRequestInquiry(
     `INSERT INTO inquiries (session_id, conversation_id, submission_id, question_message_id, request_id, question, outcome)
      VALUES ($1, $2, $3, $4, $5, $6, 'staff_requested')
      ON CONFLICT (session_id, submission_id) DO UPDATE
-       SET outcome = 'staff_requested', request_id = EXCLUDED.request_id, failure_reason = NULL, updated_at = now()
-       WHERE inquiries.outcome = 'failed'`,
+       SET request_id = EXCLUDED.request_id, updated_at = now(),
+           outcome = CASE WHEN inquiries.outcome IN ('failed', 'pending') THEN 'staff_requested' ELSE inquiries.outcome END,
+           failure_reason = CASE WHEN inquiries.outcome IN ('failed', 'pending') THEN NULL ELSE inquiries.failure_reason END`,
     [sessionId, input.conversationId, input.submissionId, input.questionMessageId, input.requestId, input.question],
   );
 }
@@ -93,7 +98,8 @@ export async function listEvidenceForMessage(sessionId: string, messageId: strin
 }
 
 export type AskResult =
-  | { status: "answered" | "clarified" | "handoff_offered"; inquiry: Inquiry; message: Message; sources: Evidence[]; usage: UsageSnapshot | null }
+  | { status: "answered" | "clarified" | "handoff_offered" | "sensitive"; inquiry: Inquiry; message: Message; sources: Evidence[]; request: StaffRequest | null; usage: UsageSnapshot | null }
+  | { status: "staff_requested"; inquiry: Inquiry; request: StaffRequest; usage: UsageSnapshot | null }
   | { status: "failed"; inquiry: Inquiry; reason: string; usage: UsageSnapshot | null }
   | { status: "limited"; inquiry: Inquiry; scope: "session" | "daily"; usage: UsageSnapshot }
   | { status: "pending"; inquiry: Inquiry };
@@ -194,9 +200,23 @@ async function persistResult(sessionId: string, inquiry: Inquiry, result: Answer
     const updated = await setOutcome(sessionId, inquiry.id, "failed", result.reason);
     return { status: "failed", inquiry: updated, reason: result.reason, usage };
   }
-  const outcome: InquiryOutcome = result.kind === "answer" ? "answered" : result.kind === "clarify" ? "clarified" : "handoff_offered";
-  const sources: KnowledgeEntry[] = result.kind === "clarify" ? [] : result.sources;
+  const sources: KnowledgeEntry[] = result.kind === "answer" || result.kind === "handoff" ? result.sources : [];
+
+  // Explicit staff intent (user story 7): the handoff proceeds now, with no
+  // second confirmation and no front-desk message. Sensitive questions still get
+  // their acknowledgment first, then the request.
+  if (result.contactStaff && result.kind !== "sensitive") {
+    const { request } = await createStaffRequest(sessionId, {
+      submissionId: inquiry.submissionId, question: inquiry.question, origin: "parent_initiated", knownPolicyEntryId: sources[0]?.id ?? null,
+    });
+    const updated = await getInquiry(sessionId, inquiry.id);
+    return { status: "staff_requested", inquiry: updated ?? inquiry, request, usage };
+  }
+
+  const outcome: InquiryOutcome =
+    result.kind === "answer" ? "answered" : result.kind === "clarify" ? "clarified" : result.kind === "sensitive" ? "sensitive" : "handoff_offered";
   const client = await getPool().connect();
+  let saved: { inquiry: Inquiry; message: Message; sources: Evidence[] };
   try {
     await client.query("BEGIN");
     const conv = await client.query<{ conversation_id: string }>("SELECT conversation_id FROM inquiries WHERE id = $1", [inquiry.id]);
@@ -215,23 +235,52 @@ async function persistResult(sessionId: string, inquiry: Inquiry, result: Answer
       `UPDATE inquiries SET outcome = $3, answer_message_id = $4, failure_reason = NULL, updated_at = now()
        WHERE id = $1 AND session_id = $2 RETURNING ${COLS}`, [inquiry.id, sessionId, outcome, msg.rows[0].id]);
     await client.query("COMMIT");
-    return { status: outcome, inquiry: toInquiry(upd.rows[0]), message: toMessage(msg.rows[0]), sources: evidence, usage };
+    saved = { inquiry: toInquiry(upd.rows[0]), message: toMessage(msg.rows[0]), sources: evidence };
   } catch (err) {
     await client.query("ROLLBACK").catch(() => undefined);
     throw err;
   } finally {
     client.release();
   }
+
+  // Sensitive + explicit staff intent: hand off directly, flagged sensitive.
+  let request: StaffRequest | null = null;
+  if (result.kind === "sensitive" && result.contactStaff) {
+    request = (await createStaffRequest(sessionId, { submissionId: inquiry.submissionId, question: inquiry.question, origin: "sensitive" })).request;
+    saved.inquiry = (await getInquiry(sessionId, inquiry.id)) ?? saved.inquiry;
+  }
+  return { status: outcome as "answered" | "clarified" | "handoff_offered" | "sensitive", ...saved, request, usage };
+}
+
+/**
+ * How a staff request raised from the conversation should be filed, derived
+ * from the saved question rather than trusted from the client: a handoff offer
+ * keeps the policy it cited as known policy; a sensitive acknowledgment flags
+ * the request sensitive. Unknown submissions are plain parent-initiated requests.
+ */
+export async function deriveRequestOrigin(sessionId: string, submissionId: string): Promise<{ origin: RequestOrigin; knownPolicyEntryId: string | null }> {
+  const res = await getPool().query<{ outcome: InquiryOutcome; entry_id: string | null }>(
+    `SELECT i.outcome, (SELECT entry_id FROM answer_evidence e WHERE e.message_id = i.answer_message_id AND e.session_id = i.session_id ORDER BY position LIMIT 1) AS entry_id
+     FROM inquiries i WHERE i.session_id = $1 AND i.submission_id = $2`, [sessionId, submissionId]);
+  const row = res.rows[0];
+  if (!row) return { origin: "parent_initiated", knownPolicyEntryId: null };
+  if (row.outcome === "sensitive") return { origin: "sensitive", knownPolicyEntryId: null };
+  if (row.outcome === "handoff_offered") return { origin: "handoff_offered", knownPolicyEntryId: row.entry_id };
+  return { origin: "parent_initiated", knownPolicyEntryId: row.entry_id };
 }
 
 /** A retry after a lost response: return what was already saved, no second model call. */
 async function replay(sessionId: string, inquiry: Inquiry): Promise<AskResult> {
-  if (inquiry.outcome === "staff_requested" || inquiry.outcome === "sensitive" || !inquiry.answerMessageId) {
+  if (inquiry.outcome === "staff_requested") {
+    const request = inquiry.requestId ? await getRequest(sessionId, inquiry.requestId) : null;
+    if (request) return { status: "staff_requested", inquiry, request, usage: null };
+  }
+  if (inquiry.outcome === "staff_requested" || !inquiry.answerMessageId) {
     return { status: "failed", inquiry, reason: "no_answer_saved", usage: null };
   }
   const [msg, sources] = await Promise.all([
     getPool().query<MessageRow>(`SELECT ${MSG_COLS} FROM messages WHERE id = $1 AND session_id = $2`, [inquiry.answerMessageId, sessionId]),
     listEvidenceForMessage(sessionId, inquiry.answerMessageId),
   ]);
-  return { status: inquiry.outcome as "answered" | "clarified" | "handoff_offered", inquiry, message: toMessage(msg.rows[0]), sources, usage: null };
+  return { status: inquiry.outcome as "answered" | "clarified" | "handoff_offered" | "sensitive", inquiry, message: toMessage(msg.rows[0]), sources, request: null, usage: null };
 }

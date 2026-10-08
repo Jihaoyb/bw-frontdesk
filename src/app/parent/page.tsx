@@ -1,6 +1,7 @@
 import { AnswerFailure } from "@/components/answer-failure";
 import { CenterInfo } from "@/components/center-info";
 import { Composer } from "@/components/composer";
+import { HandoffOffer } from "@/components/handoff-offer";
 import { MessageBubble } from "@/components/message-bubble";
 import { ParentReplyForm } from "@/components/parent-reply-form";
 import { PerspectiveNav } from "@/components/perspective-nav";
@@ -21,6 +22,9 @@ export default async function ParentPage() {
   ]);
   const requestByMessage = new Map(requests.filter((r) => r.questionMessageId).map((r) => [r.questionMessageId as string, r]));
   const failedByMessage = new Map(inquiries.filter((i) => i.outcome === "failed" && i.questionMessageId).map((i) => [i.questionMessageId as string, i]));
+  // Open offers: the front desk could not settle it and no request exists yet.
+  const offerByAnswer = new Map(
+    inquiries.filter((i) => (i.outcome === "handoff_offered" || i.outcome === "sensitive") && i.answerMessageId && !i.requestId).map((i) => [i.answerMessageId as string, i]));
   const knownPolicies = new Map(
     await Promise.all(
       requests.filter((r) => r.knownPolicyEntryId).map(async (r) => [r.id, await getKnowledgeEntry(session.id, r.knownPolicyEntryId as string)] as const),
@@ -49,11 +53,13 @@ export default async function ParentPage() {
             {messages.map((m) => {
               const req = requestByMessage.get(m.id);
               const failed = failedByMessage.get(m.id);
+              const offer = offerByAnswer.get(m.id);
               if (m.requestId && !req) return null; // rendered under its request below
               return (
                 <li key={m.id} className="space-y-2">
                   <MessageBubble message={m} viewer="parent" sources={evidence.get(m.id) ?? []} />
                   {failed && <AnswerFailure submissionId={failed.submissionId} question={failed.question} reason={failed.failureReason} />}
+                  {offer && <HandoffOffer submissionId={offer.submissionId} question={offer.question} variant={offer.outcome === "sensitive" ? "sensitive" : "handoff"} />}
                   {req && (
                     <div className="space-y-2" data-request={req.id}>
                       <RequestCard request={req} knownPolicy={knownPolicies.get(req.id) ?? null} />

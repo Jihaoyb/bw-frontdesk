@@ -96,7 +96,7 @@ describe("sourced answers", () => {
     expect(validateModelResult({ kind: "answer", text: "x", source_ids: [] }, knowledge)).toEqual({ kind: "failure", reason: "unsupported" });
     expect(validateModelResult({ kind: "answer", text: "  ", source_ids: [knowledge[0].id] }, knowledge)).toEqual({ kind: "failure", reason: "invalid_shape" });
     expect(validateModelResult("nope", knowledge)).toEqual({ kind: "failure", reason: "invalid_shape" });
-    expect(validateModelResult({ kind: "clarify", text: "Which date?", source_ids: [] }, knowledge)).toEqual({ kind: "clarify", text: "Which date?" });
+    expect(validateModelResult({ kind: "clarify", text: "Which date?", source_ids: [] }, knowledge)).toEqual({ kind: "clarify", text: "Which date?", contactStaff: false });
   });
 
   it("I24: timeout, invalid JSON, or unknown id → failed outcome, question preserved, no answer shown; retry re-asks once", async () => {

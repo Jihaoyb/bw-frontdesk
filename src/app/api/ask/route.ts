@@ -9,7 +9,8 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 30;
 
 // POST { submissionId, question }
-//  200 { status: answered|clarified|handoff_offered, message, sources }
+//  200 { status: answered|clarified|handoff_offered|sensitive, message, sources, request? }
+//  200 { status: staff_requested, request }  explicit staff intent: request created, no second confirmation
 //  200 { status: failed, reason }        question kept; Retry reuses submissionId
 //  429 { status: limited, scope }         allowance exhausted; nothing dispatched
 //  503 { status: disabled }               public model access gated off
@@ -39,12 +40,15 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ status: "failed", reason: result.reason, inquiryId: result.inquiry.id, usage: result.usage }, { status: 200 });
     case "pending":
       return NextResponse.json({ status: "pending", inquiryId: result.inquiry.id }, { status: 202 });
+    case "staff_requested":
+      return NextResponse.json({ status: "staff_requested", inquiryId: result.inquiry.id, request: { id: result.request.id, status: result.request.status }, usage: result.usage });
     default:
       return NextResponse.json({
         status: result.status,
         inquiryId: result.inquiry.id,
         message: { id: result.message.id, body: result.message.body, createdAt: result.message.createdAt },
         sources: result.sources.map((s) => ({ id: s.id, title: s.title, policyText: s.policyText })),
+        request: result.request ? { id: result.request.id, status: result.request.status } : null,
         usage: result.usage,
       });
   }

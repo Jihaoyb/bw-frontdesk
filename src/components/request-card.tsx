@@ -32,12 +32,19 @@ export function RequestCard({ request, knownPolicy }: { request: StaffRequest; k
     <article aria-label="Staff request" className="card overflow-hidden text-sm">
       <div className="flex items-center justify-between gap-2 border-b border-stone-100 bg-stone-50/70 px-4 py-2.5">
         <h3 className="eyebrow">Staff request</h3>
-        <StatusPill status={request.status} />
+        <div className="flex items-center gap-1.5">
+          {request.origin === "sensitive" && <span className="pill bg-red-50 text-red-900 ring-1 ring-red-200" data-origin="sensitive">Sensitive</span>}
+          <StatusPill status={request.status} />
+        </div>
       </div>
       <dl className="space-y-3 px-4 py-3">
         <div>
           <dt className="eyebrow">Known policy</dt>
-          <dd className="mt-0.5">{knownPolicy ? <><span className="font-medium">{knownPolicy.title}.</span> {knownPolicy.policyText}</> : <span className="text-stone-600">No published policy covers this yet.</span>}</dd>
+          <dd className="mt-0.5">
+            {knownPolicy
+              ? <><span className="font-medium">{knownPolicy.title}.</span> {knownPolicy.policyText}</>
+              : <span className="text-stone-600">{request.origin === "sensitive" ? "Not answered from policy. Staff handle this directly." : "No published policy covers this yet."}</span>}
+          </dd>
         </div>
         <div>
           <dt className="eyebrow">Still needs staff</dt>
