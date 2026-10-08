@@ -5,7 +5,7 @@ import { ensureSession, newSessionId, resetSessionContent } from "@/lib/session"
 import { listPublishedKnowledge } from "@/lib/knowledge";
 import { setModelCallerForTests, validateModelResult, type ModelCaller } from "@/lib/answer-service";
 import { askFrontDesk, listEvidence, listInquiries } from "@/lib/inquiries";
-import { createStaffRequest, listMessages } from "@/lib/requests";
+import { createStaffRequest, listMessages, parentReply, staffReply } from "@/lib/requests";
 import { consumeAllowance, readUsage } from "@/lib/usage";
 import { getPool } from "@/lib/db";
 import { SESSION_HEADER } from "@/lib/center-config";
@@ -208,6 +208,13 @@ describe("usage allowance", () => {
     expect(calls).toBe(0);
     const req = await createStaffRequest(s.id, { submissionId: randomUUID(), question: I01, origin: "parent_initiated" });
     expect(req.request.status).toBe("awaiting_review");
+    // Non-AI functionality stays available at exhaustion: policy browsing, parent and staff messaging.
+    expect((await listPublishedKnowledge(s.id)).length).toBeGreaterThan(0);
+    const parent = await parentReply(s.id, req.request.id, "Any update?");
+    expect(parent.ok).toBe(true);
+    const staff = await staffReply(s.id, req.request.id, { staffName: "Dana R.", body: "Looking now.", outcome: "reply" });
+    expect(staff.ok && staff.request.status).toBe("staff_reviewing");
+    expect((await listMessages(s.id)).filter((m) => m.speaker !== "assistant").length).toBeGreaterThanOrEqual(3);
   });
 });
 

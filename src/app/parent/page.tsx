@@ -1,4 +1,5 @@
 import { AnswerFailure } from "@/components/answer-failure";
+import { isStalePending } from "@/lib/inquiries";
 import { CenterInfo } from "@/components/center-info";
 import { Composer } from "@/components/composer";
 import { HandoffOffer } from "@/components/handoff-offer";
@@ -7,7 +8,7 @@ import { ParentReplyForm } from "@/components/parent-reply-form";
 import { PerspectiveNav } from "@/components/perspective-nav";
 import { RequestCard } from "@/components/request-card";
 import { listEvidence, listInquiries } from "@/lib/inquiries";
-import { getKnowledgeEntry } from "@/lib/knowledge";
+import { getKnowledgeEntries } from "@/lib/knowledge";
 import { AI_ANSWERS_ENABLED, MAX_QUESTION_CHARS } from "@/lib/limits";
 import { listMessages, listRequests } from "@/lib/requests";
 import { getActiveSession } from "@/lib/request-session";
@@ -21,15 +22,13 @@ export default async function ParentPage() {
     listMessages(session.id), listRequests(session.id), listInquiries(session.id), listEvidence(session.id), readUsage(session.id),
   ]);
   const requestByMessage = new Map(requests.filter((r) => r.questionMessageId).map((r) => [r.questionMessageId as string, r]));
-  const failedByMessage = new Map(inquiries.filter((i) => i.outcome === "failed" && i.questionMessageId).map((i) => [i.questionMessageId as string, i]));
+  // Failed answers and abandoned claims (pending past the model timeout) both get the recovery card.
+  const failedByMessage = new Map(inquiries.filter((i) => (i.outcome === "failed" || isStalePending(i)) && i.questionMessageId).map((i) => [i.questionMessageId as string, i]));
   // Open offers: the front desk could not settle it and no request exists yet.
   const offerByAnswer = new Map(
     inquiries.filter((i) => (i.outcome === "handoff_offered" || i.outcome === "sensitive") && i.answerMessageId && !i.requestId).map((i) => [i.answerMessageId as string, i]));
-  const knownPolicies = new Map(
-    await Promise.all(
-      requests.filter((r) => r.knownPolicyEntryId).map(async (r) => [r.id, await getKnowledgeEntry(session.id, r.knownPolicyEntryId as string)] as const),
-    ),
-  );
+  const policyEntries = await getKnowledgeEntries(session.id, requests.map((r) => r.knownPolicyEntryId)); // one query, not one per request
+  const knownPolicies = new Map(requests.map((r) => [r.id, r.knownPolicyEntryId ? policyEntries.get(r.knownPolicyEntryId) ?? null : null] as const));
   // Follow-ups (parent details, staff replies) render under their request card,
   // so the exchange reads alongside the original question after a refresh.
   const followUps = new Map<string, typeof messages>();
@@ -58,7 +57,7 @@ export default async function ParentPage() {
               return (
                 <li key={m.id} className="space-y-2">
                   <MessageBubble message={m} viewer="parent" sources={evidence.get(m.id) ?? []} />
-                  {failed && <AnswerFailure submissionId={failed.submissionId} question={failed.question} reason={failed.failureReason} />}
+                  {failed && <AnswerFailure submissionId={failed.submissionId} question={failed.question} reason={failed.outcome === "pending" ? "stale_pending" : failed.failureReason} />}
                   {offer && <HandoffOffer submissionId={offer.submissionId} question={offer.question} variant={offer.outcome === "sensitive" ? "sensitive" : "handoff"} />}
                   {req && (
                     <div className="space-y-2" data-request={req.id}>

@@ -11,6 +11,7 @@ export function ParentReplyForm({ requestId, maxChars, closed }: { requestId: st
   const router = useRouter();
   const [body, setBody] = useState("");
   const [delivery, setDelivery] = useState<Delivery>({ kind: "idle" });
+  const [submissionId, setSubmissionId] = useState<string | null>(null); // stable across retries → one message
   const busy = delivery.kind === "saving";
 
   async function submit(e: React.FormEvent) {
@@ -18,8 +19,10 @@ export function ParentReplyForm({ requestId, maxChars, closed }: { requestId: st
     const trimmed = body.trim();
     if (!trimmed) return setDelivery({ kind: "rejected", reason: "Type a message first." });
     if (trimmed.length > maxChars) return setDelivery({ kind: "rejected", reason: `Keep it under ${maxChars} characters.` });
-    const result = await deliver(() => parentReplyAction(requestId, trimmed), setDelivery);
-    if (result?.ok) { setBody(""); router.refresh(); }
+    const id = submissionId ?? crypto.randomUUID();
+    setSubmissionId(id);
+    const result = await deliver(() => parentReplyAction(requestId, trimmed, id), setDelivery);
+    if (result?.ok) { setBody(""); setSubmissionId(null); router.refresh(); }
   }
 
   return (

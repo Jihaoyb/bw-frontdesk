@@ -74,6 +74,16 @@ export async function getKnowledgeEntry(sessionId: string, entryId: string): Pro
   return res.rows[0] ? toEntry(res.rows[0]) : null;
 }
 
+/** Several entries by id in one query, scoped. Missing or foreign ids are simply absent. */
+export async function getKnowledgeEntries(sessionId: string, entryIds: readonly (string | null)[]): Promise<Map<string, KnowledgeEntry>> {
+  const ids = [...new Set(entryIds.filter((id): id is string => !!id && UUID_RE.test(id)))];
+  const out = new Map<string, KnowledgeEntry>();
+  if (!ids.length) return out;
+  const res = await getPool().query<Row>(`SELECT ${COLUMNS} FROM knowledge_entries WHERE session_id = $1 AND id = ANY($2::uuid[])`, [sessionId, ids]);
+  for (const r of res.rows) out.set(r.id, toEntry(r));
+  return out;
+}
+
 // ---- Issue 006: create, edit, publish. Nothing here touches other sessions. ----
 
 export type KnowledgeInput = { title: string; policyText: string };
@@ -123,8 +133,23 @@ export async function saveKnowledgeDraft(sessionId: string, entryId: string, inp
  * timestamp. Earlier answers keep their own evidence snapshot (answer_evidence),
  * so republishing never rewrites what a past answer cited.
  */
-export async function publishKnowledge(sessionId: string, entryId: string): Promise<KnowledgeWriteResult> {
+export async function publishKnowledge(sessionId: string, entryId: string, reviewed?: KnowledgeInput): Promise<KnowledgeWriteResult> {
   if (!UUID_RE.test(entryId)) return { ok: false, error: "not_found" };
+  if (reviewed) {
+    // Publish exactly the text the operator reviewed, in one statement. A
+    // save-then-publish pair would let another tab's save slip in between.
+    const v = validateKnowledgeInput(reviewed);
+    if (!v.ok) return v;
+    const one = await getPool().query<Row>(
+      `UPDATE knowledge_entries
+       SET title = $3, policy_text = $4, published_at = now(),
+           draft_title = NULL, draft_policy_text = NULL, draft_saved_at = NULL
+       WHERE id = $1::uuid AND session_id = $2
+       RETURNING ${COLUMNS}`,
+      [entryId, sessionId, v.value.title, v.value.policyText],
+    );
+    return one.rows[0] ? { ok: true, entry: toEntry(one.rows[0]) } : { ok: false, error: "not_found" };
+  }
   const res = await getPool().query<Row>(
     `UPDATE knowledge_entries
      SET title = draft_title, policy_text = draft_policy_text, published_at = now(),

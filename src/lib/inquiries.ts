@@ -4,7 +4,7 @@ import type { PoolClient } from "pg";
 import { answerQuestion, type AnswerResult } from "./answer-service";
 import { getPool } from "./db";
 import { listPublishedKnowledge, type KnowledgeEntry } from "./knowledge";
-import { CONTEXT_TURNS } from "./limits";
+import { MODEL_TIMEOUT_MS, CONTEXT_TURNS } from "./limits";
 import { createStaffRequest, getOrCreateConversation, getRequest, validateQuestion, validateSubmissionId, type Message, type RequestOrigin, type StaffRequest } from "./requests";
 import { consumeAllowance, type UsageSnapshot } from "./usage";
 
@@ -23,6 +23,7 @@ export type Inquiry = {
   outcome: InquiryOutcome;
   failureReason: string | null;
   createdAt: Date;
+  updatedAt: Date;
 };
 
 /** Evidence copied at answer time. entryId may later be null if the entry is deleted; the text stays. */
@@ -30,14 +31,24 @@ export type Evidence = { id: string; messageId: string; entryId: string | null; 
 
 type InquiryRow = {
   id: string; session_id: string; submission_id: string; question_message_id: string | null; answer_message_id: string | null;
-  request_id: string | null; question: string; outcome: InquiryOutcome; failure_reason: string | null; created_at: Date;
+  request_id: string | null; question: string; outcome: InquiryOutcome; failure_reason: string | null; created_at: Date; updated_at: Date;
 };
-const COLS = "id, session_id, submission_id, question_message_id, answer_message_id, request_id, question, outcome, failure_reason, created_at";
+const COLS = "id, session_id, submission_id, question_message_id, answer_message_id, request_id, question, outcome, failure_reason, created_at, updated_at";
 const toInquiry = (r: InquiryRow): Inquiry => ({
   id: r.id, sessionId: r.session_id, submissionId: r.submission_id, questionMessageId: r.question_message_id,
   answerMessageId: r.answer_message_id, requestId: r.request_id, question: r.question, outcome: r.outcome,
-  failureReason: r.failure_reason, createdAt: r.created_at,
+  failureReason: r.failure_reason, createdAt: r.created_at, updatedAt: r.updated_at,
 });
+
+/**
+ * A pending inquiry older than this is stale: the model call has a hard
+ * timeout, so a claim that outlives it by this much was abandoned (process
+ * killed, database error after the claim). Stale rows are retryable.
+ */
+export const STALE_PENDING_MS = MODEL_TIMEOUT_MS + 10_000;
+export function isStalePending(i: Pick<Inquiry, "outcome" | "updatedAt">, now: Date = new Date()): boolean {
+  return i.outcome === "pending" && now.getTime() - i.updatedAt.getTime() > STALE_PENDING_MS;
+}
 
 type EvidenceRow = { id: string; message_id: string; entry_id: string | null; title: string; policy_text: string; published_at: Date | null };
 const toEvidence = (r: EvidenceRow): Evidence => ({
@@ -152,14 +163,21 @@ async function claimInquiry(sessionId: string, submissionId: string, question: s
     );
     if (!claimed.rowCount) {
       await client.query("ROLLBACK");
-      const existing = await getPool().query<InquiryRow>(
+      // Same connection on purpose (see createStaffRequest): never hold one
+      // client while waiting for another.
+      const existing = await client.query<InquiryRow>(
         `SELECT ${COLS} FROM inquiries WHERE session_id = $1 AND submission_id = $2`, [sessionId, submissionId]);
       const row = toInquiry(existing.rows[0]);
-      if (row.outcome === "failed") {
-        // Retry: back to pending so a concurrent duplicate retry sees in-flight work.
-        const again = await getPool().query<InquiryRow>(
+      if (row.outcome === "failed" || row.outcome === "pending") {
+        // Retry: a failed row goes back to pending so a concurrent duplicate
+        // sees in-flight work. A pending row is reclaimed only once it is stale
+        // (older than the model timeout plus grace): the process that claimed
+        // it died mid-flight, and nothing else will ever finish it.
+        const again = await client.query<InquiryRow>(
           `UPDATE inquiries SET outcome = 'pending', failure_reason = NULL, updated_at = now()
-           WHERE id = $1 AND session_id = $2 AND outcome = 'failed' RETURNING ${COLS}`, [row.id, sessionId]);
+           WHERE id = $1 AND session_id = $2
+             AND (outcome = 'failed' OR (outcome = 'pending' AND updated_at < now() - ($3::int * interval '1 millisecond')))
+           RETURNING ${COLS}`, [row.id, sessionId, STALE_PENDING_MS]);
         if (again.rows[0]) return { ...toInquiry(again.rows[0]), fresh: true };
         return { ...row, outcome: "pending", fresh: false };
       }

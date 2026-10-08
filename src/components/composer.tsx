@@ -21,6 +21,9 @@ export function Composer({ maxChars, usage, aiEnabled }: { maxChars: number; usa
   const exhausted = usage.sessionUsed >= usage.sessionLimit || usage.dailyUsed >= usage.dailyLimit;
   const aiAvailable = aiEnabled && !exhausted;
   const busy = delivery.kind === "saving";
+  // While a save is unconfirmed the text is locked to the submission id that
+  // may already be saved: Retry replays it; Edit instead starts a new one.
+  const unconfirmed = delivery.kind === "unconfirmed";
 
   async function send(mode: Mode) {
     const trimmed = text.trim();
@@ -59,6 +62,13 @@ export function Composer({ maxChars, usage, aiEnabled }: { maxChars: number; usa
     }
   }
 
+  function editInstead() {
+    setSubmissionId(null);
+    setDelivery({ kind: "idle" });
+    setNotice("Starting a new question. If the earlier one did save, it will show up after a refresh.");
+    ref.current?.focus();
+  }
+
   function done() {
     setDelivery({ kind: "saved" });
     setText("");
@@ -77,7 +87,7 @@ export function Composer({ maxChars, usage, aiEnabled }: { maxChars: number; usa
       <form onSubmit={(e) => { e.preventDefault(); void send(aiAvailable ? "ask" : "staff"); }} className="card p-2" aria-labelledby="ask">
         <label htmlFor="question" id="ask" className="sr-only">Ask the front desk</label>
         <textarea
-          id="question" ref={ref} name="question" value={text} rows={2} disabled={busy} maxLength={maxChars * 2}
+          id="question" ref={ref} name="question" value={text} rows={2} disabled={busy || unconfirmed} maxLength={maxChars * 2}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void send(aiAvailable ? "ask" : "staff"); } }}
           placeholder={aiAvailable ? "Ask about hours, closures, illness, meals…" : "Write a message for staff"}
@@ -91,7 +101,10 @@ export function Composer({ maxChars, usage, aiEnabled }: { maxChars: number; usa
             </span>
           </div>
           <div className="flex items-center gap-2">
-            {aiAvailable && (
+            {unconfirmed && (
+              <button type="button" onClick={editInstead} className="btn-link">Edit instead</button>
+            )}
+            {aiAvailable && !unconfirmed && (
               <button type="button" onClick={() => send("staff")} disabled={busy} className="btn-link">Ask staff</button>
             )}
             <button type="submit" disabled={busy} className={aiAvailable ? "btn-brand" : "btn-primary"}>

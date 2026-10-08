@@ -6,7 +6,8 @@
 export function normalizeQuestion(text: string): string {
   return text
     .toLowerCase()
-    .replace(/[\p{P}\p{S}]+/gu, " ") // punctuation and symbols become spaces
+    .replace(/['\u2019\u2018`]/g, "") // apostrophes vanish: "what's" and "whats" match
+    .replace(/[\p{P}\p{S}]+/gu, " ") // other punctuation and symbols become spaces
     .replace(/\s+/g, " ")
     .trim();
 }

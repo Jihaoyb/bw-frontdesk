@@ -16,19 +16,26 @@ export function StaffReplyPanel({ requestId, status, staffNames, maxChars, canDr
   const [staffName, setStaffName] = useState(staffNames[0] ?? "");
   const [body, setBody] = useState("");
   const [delivery, setDelivery] = useState<Delivery>({ kind: "idle" });
+  const [submissionId, setSubmissionId] = useState<string | null>(null); // stable across retries → one message
   const busy = delivery.kind === "saving";
   const closed = status === "closed";
 
   async function run(action: () => Promise<{ ok: boolean; error?: string }>, clear = false) {
     const result = await deliver(action, setDelivery);
-    if (result?.ok) { if (clear) setBody(""); router.refresh(); }
+    if (result?.ok) { if (clear) { setBody(""); setSubmissionId(null); } router.refresh(); }
+  }
+  function attemptId() {
+    const id = submissionId ?? crypto.randomUUID();
+    setSubmissionId(id);
+    return id;
   }
 
   function send(outcome: StaffReplyOutcome) {
     const trimmed = body.trim();
     if (!trimmed) return setDelivery({ kind: "rejected", reason: "Type a reply first." });
     if (trimmed.length > maxChars) return setDelivery({ kind: "rejected", reason: `Keep it under ${maxChars} characters.` });
-    return run(() => staffReplyAction(requestId, { staffName, body: trimmed, outcome }), true);
+    const id = attemptId();
+    return run(() => staffReplyAction(requestId, { staffName, body: trimmed, outcome, submissionId: id }), true);
   }
 
   // Issue 007: send the reply, then open a knowledge draft seeded with it. Two
@@ -38,9 +45,11 @@ export function StaffReplyPanel({ requestId, status, staffNames, maxChars, canDr
     const trimmed = body.trim();
     if (!trimmed) return setDelivery({ kind: "rejected", reason: "Type a reply first." });
     if (trimmed.length > maxChars) return setDelivery({ kind: "rejected", reason: `Keep it under ${maxChars} characters.` });
-    const sent = await deliver(() => staffReplyAction(requestId, { staffName, body: trimmed, outcome: "reply" }), setDelivery);
+    const id = attemptId();
+    const sent = await deliver(() => staffReplyAction(requestId, { staffName, body: trimmed, outcome: "reply", submissionId: id }), setDelivery);
     if (!sent?.ok) return;
     setBody("");
+    setSubmissionId(null);
     const opened = await openKnowledgeDraftAction(requestId, trimmed);
     if (!opened.ok) return setDelivery({ kind: "rejected", reason: `Reply sent. ${opened.error}` });
     router.push(opened.href);

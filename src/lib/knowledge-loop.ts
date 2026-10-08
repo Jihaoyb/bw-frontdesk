@@ -1,5 +1,5 @@
 import { getPool } from "./db";
-import { createKnowledgeDraft, getKnowledgeEntry, saveKnowledgeDraft, type KnowledgeEntry } from "./knowledge";
+import { createKnowledgeDraft, getKnowledgeEntries, getKnowledgeEntry, saveKnowledgeDraft, type KnowledgeEntry } from "./knowledge";
 import { MAX_POLICY_TITLE_CHARS } from "./limits";
 import { getRequest, type StaffRequest } from "./requests";
 
@@ -7,7 +7,7 @@ import { getRequest, type StaffRequest } from "./requests";
 // family and never grounding material. Opening a draft from a request links the
 // request to an ordinary issue-006 knowledge draft; publishing stays explicit.
 
-/** Whether the knowledge gap behind a request is still open, from the operator's point of view. */
+/** Whether a knowledge update has been opened or published for this request. Not a judgment that policy is missing. */
 export type KnowledgeGapState = "none" | "gap" | "draft" | "published";
 
 export function knowledgeGapState(request: Pick<StaffRequest, "origin" | "knowledgeDraftEntryId">, draftEntry: KnowledgeEntry | null): KnowledgeGapState {
@@ -17,9 +17,12 @@ export function knowledgeGapState(request: Pick<StaffRequest, "origin" | "knowle
   return "draft";
 }
 
+// "gap" means no knowledge update has been opened for this request. Whether the
+// policy is actually missing is the operator's call: a request that needs a
+// staff decision under a complete policy (a same-day lunch) is not a gap.
 export const gapLabel: Record<KnowledgeGapState, string> = {
   none: "No knowledge update",
-  gap: "Knowledge gap open",
+  gap: "No knowledge update yet",
   draft: "Draft open, not published",
   published: "Knowledge published",
 };
@@ -62,13 +65,8 @@ export async function openKnowledgeDraftForRequest(sessionId: string, requestId:
   return { ok: true, entry: result.entry, created: true };
 }
 
-/** Draft entries for a list of requests, keyed by request id. Scoped to the session. */
+/** Draft entries for a list of requests, keyed by request id. One query, scoped to the session. */
 export async function draftEntriesForRequests(sessionId: string, requests: StaffRequest[]): Promise<Map<string, KnowledgeEntry | null>> {
-  const out = new Map<string, KnowledgeEntry | null>();
-  await Promise.all(
-    requests.map(async (r) => {
-      out.set(r.id, r.knowledgeDraftEntryId ? await getKnowledgeEntry(sessionId, r.knowledgeDraftEntryId) : null);
-    }),
-  );
-  return out;
+  const entries = await getKnowledgeEntries(sessionId, requests.map((r) => r.knowledgeDraftEntryId));
+  return new Map(requests.map((r) => [r.id, r.knowledgeDraftEntryId ? entries.get(r.knowledgeDraftEntryId) ?? null : null]));
 }

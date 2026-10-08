@@ -43,15 +43,15 @@ export async function reopenRequestAction(requestId: string): Promise<ActionResu
   return finish(await reopenRequest(session.id, requestId));
 }
 
-export async function staffReplyAction(requestId: string, input: { staffName: string; body: string; outcome: StaffReplyOutcome }): Promise<ActionResult> {
+export async function staffReplyAction(requestId: string, input: { staffName: string; body: string; outcome: StaffReplyOutcome; submissionId?: string }): Promise<ActionResult> {
   const session = await getActiveSession();
   if (!["reply", "needs_your_reply", "close"].includes(input.outcome)) return { ok: false, error: "Not saved." };
   return finish(await staffReply(session.id, requestId, input));
 }
 
-export async function parentReplyAction(requestId: string, body: string): Promise<ActionResult> {
+export async function parentReplyAction(requestId: string, body: string, submissionId?: string): Promise<ActionResult> {
   const session = await getActiveSession();
-  return finish(await parentReply(session.id, requestId, body));
+  return finish(await parentReply(session.id, requestId, body, submissionId));
 }
 
 // ---- Issue 006: operator knowledge editor. Plain forms; the page re-renders the saved state. ----
@@ -87,10 +87,10 @@ export async function saveKnowledgeDraftAction(formData: FormData): Promise<void
 export async function publishKnowledgeAction(formData: FormData): Promise<void> {
   const session = await getActiveSession();
   const entryId = String(formData.get("entryId") ?? "");
-  // Publish saves the form's current text first, so what the operator sees is what goes live.
-  const saved = await saveKnowledgeDraft(session.id, entryId, { title: String(formData.get("title") ?? ""), policyText: String(formData.get("policyText") ?? "") });
-  if (!saved.ok) backToKnowledge(saved, "published");
-  backToKnowledge(await publishKnowledge(session.id, entryId), "published");
+  // One statement: the text on this form is what goes live, never a draft
+  // another tab saved in between.
+  const reviewed = { title: String(formData.get("title") ?? ""), policyText: String(formData.get("policyText") ?? "") };
+  backToKnowledge(await publishKnowledge(session.id, entryId, reviewed), "published");
 }
 
 // ---- Issue 007: reply-to-knowledge loop. Opening a draft publishes nothing and changes no request status. ----

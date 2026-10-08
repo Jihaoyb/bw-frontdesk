@@ -9,7 +9,7 @@ import { gapLabel, knowledgeGapState } from "@/lib/knowledge-loop";
 import { openKnowledgeDraftFormAction } from "@/app/actions";
 import { formatPublished } from "@/components/policy-list";
 import { MAX_QUESTION_CHARS } from "@/lib/limits";
-import { getRequest, listRequestMessages, STAFF_NAMES } from "@/lib/requests";
+import { getRequest, listContextBeforeRequest, listRequestMessages, STAFF_NAMES } from "@/lib/requests";
 import { getActiveSession } from "@/lib/request-session";
 
 export const dynamic = "force-dynamic";
@@ -21,10 +21,11 @@ export default async function RequestPage({ params, searchParams }: { params: Pr
   const session = await getActiveSession();
   const request = await getRequest(session.id, id); // scoped: other sessions' ids → null
   if (!request) notFound();
-  const [knownPolicy, draftEntry, messages] = await Promise.all([
+  const [knownPolicy, draftEntry, messages, context] = await Promise.all([
     request.knownPolicyEntryId ? getKnowledgeEntry(session.id, request.knownPolicyEntryId) : null,
     request.knowledgeDraftEntryId ? getKnowledgeEntry(session.id, request.knowledgeDraftEntryId) : null,
     listRequestMessages(session.id, request.id),
+    listContextBeforeRequest(session.id, request.id),
   ]);
   const gap = knowledgeGapState(request, draftEntry);
   return (
@@ -36,6 +37,17 @@ export default async function RequestPage({ params, searchParams }: { params: Pr
           <span>Origin: <span data-origin={request.origin}>{originLabel[request.origin]}</span></span>
         </div>
         <RequestCard request={request} knownPolicy={knownPolicy} />
+        {context.length > 0 && (
+          <details className="card text-sm" data-context-count={context.length}>
+            <summary className="cursor-pointer list-none px-4 py-3">
+              <span className="eyebrow">Conversation before this request</span>
+              <span className="ml-2 text-xs text-stone-500">{context.length} earlier message{context.length === 1 ? "" : "s"} the family saw</span>
+            </summary>
+            <ol className="space-y-3 border-t border-stone-100 px-4 py-3">
+              {context.map((m) => <li key={m.id}><MessageBubble message={m} viewer="operator" /></li>)}
+            </ol>
+          </details>
+        )}
         <section aria-labelledby="thread" className="space-y-3">
           <h3 id="thread" className="eyebrow">Messages on this request</h3>
           <ol className="space-y-3">
@@ -68,7 +80,7 @@ function KnowledgeUpdate({ requestId, gap, draftEntry, error }: {
       ) : gap === "gap" ? (
         <>
           <p className="mt-2 text-xs text-stone-500">
-            Viewing this page records nothing. Replies and closing do not publish knowledge; a reply alone leaves this gap open for the next family who asks.
+            Viewing this page records nothing. Replies and closing do not publish knowledge. If this question showed a gap in the published policies, open a draft; if the policy is complete and the family just needs a decision, a reply is all it takes.
           </p>
           <form action={openKnowledgeDraftFormAction} className="mt-3">
             <input type="hidden" name="requestId" value={requestId} />

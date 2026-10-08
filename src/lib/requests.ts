@@ -116,7 +116,9 @@ export async function createStaffRequest(sessionId: string, input: CreateRequest
     );
     if (!claimed.rowCount) {
       await client.query("ROLLBACK");
-      const existing = await getPool().query<RequestRow>(
+      // Reuse the connection we already hold: asking the pool for a second one
+      // while holding this one let N concurrent duplicates exhaust a pool of N.
+      const existing = await client.query<RequestRow>(
         `SELECT ${REQUEST_COLS} FROM staff_requests WHERE session_id = $1 AND submission_id = $2`,
         [sessionId, input.submissionId]);
       return { request: toRequest(existing.rows[0]), created: false };
@@ -219,43 +221,60 @@ export type StaffReplyOutcome = "reply" | "needs_your_reply" | "close";
  * A staff reply is a message to this family only; it is not published knowledge.
  */
 export async function staffReply(
-  sessionId: string, requestId: string, input: { staffName: unknown; body: unknown; outcome: StaffReplyOutcome },
+  sessionId: string, requestId: string, input: { staffName: unknown; body: unknown; outcome: StaffReplyOutcome; submissionId?: unknown },
 ): Promise<TransitionResult> {
   if (!UUID_RE.test(requestId)) return { ok: false, error: "not_found" };
   if (!isStaffName(input.staffName)) return { ok: false, error: "invalid_staff_name" };
   const v = validateQuestion(input.body);
   if (!v.ok) return { ok: false, error: "invalid_body" };
+  const submissionId = validateSubmissionId(input.submissionId) ? input.submissionId : null;
   const statusSql = {
     reply: `status = CASE WHEN status = 'awaiting_review' THEN 'staff_reviewing' ELSE status END`,
     needs_your_reply: `status = 'needs_your_reply', closed_at = NULL`,
     close: `status = 'closed', closed_at = now()`,
   }[input.outcome];
   return withRequest(sessionId, requestId, async (client, req) => {
+    // Idempotent on (session, submissionId): a retry after a lost response
+    // finds the message already saved and changes nothing.
+    const already = await findReplyBySubmission(client, sessionId, submissionId);
+    if (already) return { ok: true, request: toRequest(req), message: already };
     const msg = await client.query<MessageRow>(
-      `INSERT INTO messages (session_id, conversation_id, request_id, speaker, staff_name, body)
-       VALUES ($1, $2, $3, 'staff', $4, $5)
+      `INSERT INTO messages (session_id, conversation_id, request_id, speaker, staff_name, body, submission_id)
+       VALUES ($1, $2, $3, 'staff', $4, $5, $6::uuid)
        RETURNING id, conversation_id, request_id, speaker, staff_name, body, created_at`,
-      [sessionId, req.conversation_id, req.id, input.staffName, v.question],
+      [sessionId, req.conversation_id, req.id, input.staffName, v.question, submissionId],
     );
     const upd = await scopedUpdate(client, sessionId, requestId, `${statusSql}, reviewed_at = COALESCE(reviewed_at, now())`);
     return { ok: true, request: toRequest(upd.rows[0]), message: toMessage(msg.rows[0]) };
   });
 }
 
+/** The reply saved under this submission id, if any. Runs inside the request's row lock, so duplicates serialize. */
+async function findReplyBySubmission(client: PoolClient, sessionId: string, submissionId: string | null): Promise<Message | null> {
+  if (!submissionId) return null;
+  const res = await client.query<MessageRow>(
+    `SELECT id, conversation_id, request_id, speaker, staff_name, body, created_at
+     FROM messages WHERE session_id = $1 AND submission_id = $2::uuid`, [sessionId, submissionId]);
+  return res.rows[0] ? toMessage(res.rows[0]) : null;
+}
+
 /**
  * Parent adds details under a request. Closed or needs-your-reply requests go
  * back to awaiting_review; a request staff is already reviewing stays there.
  */
-export async function parentReply(sessionId: string, requestId: string, body: unknown): Promise<TransitionResult> {
+export async function parentReply(sessionId: string, requestId: string, body: unknown, submissionIdRaw?: unknown): Promise<TransitionResult> {
   if (!UUID_RE.test(requestId)) return { ok: false, error: "not_found" };
   const v = validateQuestion(body);
   if (!v.ok) return { ok: false, error: "invalid_body" };
+  const submissionId = validateSubmissionId(submissionIdRaw) ? submissionIdRaw : null;
   return withRequest(sessionId, requestId, async (client, req) => {
+    const already = await findReplyBySubmission(client, sessionId, submissionId);
+    if (already) return { ok: true, request: toRequest(req), message: already };
     const msg = await client.query<MessageRow>(
-      `INSERT INTO messages (session_id, conversation_id, request_id, speaker, body)
-       VALUES ($1, $2, $3, 'parent', $4)
+      `INSERT INTO messages (session_id, conversation_id, request_id, speaker, body, submission_id)
+       VALUES ($1, $2, $3, 'parent', $4, $5::uuid)
        RETURNING id, conversation_id, request_id, speaker, staff_name, body, created_at`,
-      [sessionId, req.conversation_id, req.id, v.question],
+      [sessionId, req.conversation_id, req.id, v.question, submissionId],
     );
     const upd = await scopedUpdate(client, sessionId, requestId,
       `status = CASE WHEN status IN ('closed', 'needs_your_reply') THEN 'awaiting_review' ELSE status END, closed_at = NULL`);
@@ -285,6 +304,26 @@ async function withRequest(
   } finally {
     client.release();
   }
+}
+
+/**
+ * The conversation leading up to a request: the parent/front-desk turns before
+ * the request's question (clarifications, the AI explanation that triggered the
+ * handoff). Staff see what the family saw, not just the tagged question. Scoped.
+ */
+export async function listContextBeforeRequest(sessionId: string, requestId: string, limit = 6): Promise<Message[]> {
+  if (!UUID_RE.test(requestId)) return [];
+  const res = await getPool().query<MessageRow>(
+    `SELECT m.id, m.conversation_id, m.request_id, m.speaker, m.staff_name, m.body, m.created_at
+     FROM messages m
+     JOIN staff_requests r ON r.id = $1::uuid AND r.session_id = $2 AND r.conversation_id = m.conversation_id
+     LEFT JOIN messages q ON q.id = r.question_message_id
+     WHERE m.session_id = $2
+       AND m.speaker IN ('parent', 'assistant')
+       AND (m.request_id IS NULL OR m.request_id <> r.id)
+       AND m.created_at < COALESCE(q.created_at, r.created_at)
+     ORDER BY m.created_at DESC LIMIT $3`, [requestId, sessionId, limit]);
+  return res.rows.reverse().map(toMessage);
 }
 
 /** Messages attached to one request (question, parent details, staff replies), oldest first. Scoped. */
