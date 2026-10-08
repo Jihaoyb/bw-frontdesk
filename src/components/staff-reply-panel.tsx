@@ -1,5 +1,6 @@
 "use client";
 
+import { GrowingTextarea } from "./growing-textarea";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { markReviewingAction, openKnowledgeDraftAction, reopenRequestAction, staffReplyAction } from "@/app/actions";
@@ -51,7 +52,7 @@ export function StaffReplyPanel({ requestId, status, staffNames, maxChars, canDr
     return run(() => staffReplyAction(requestId, { staffName, body: trimmed, outcome, submissionId: id }), true);
   }
 
-  // Issue 007: send the reply, then open a knowledge draft seeded with it. Two
+  // Issue 007: send the reply, then open a Handbook draft seeded with it. Two
   // independent saves; the second publishes nothing. If the reply saved but the
   // draft did not, the delivery line says so and the reply is already sent.
   async function sendAndDraft() {
@@ -68,6 +69,13 @@ export function StaffReplyPanel({ requestId, status, staffNames, maxChars, canDr
     router.push(opened.href);
   }
 
+  if (closed) return (
+    <section aria-label="Closed request actions" className="flex flex-col items-start gap-2">
+      <button type="button" disabled={busy} onClick={() => run(() => reopenRequestAction(requestId))} className="btn-ghost">Reopen</button>
+      <DeliveryStatus delivery={delivery} />
+    </section>
+  );
+
   return (
     <section aria-labelledby="staff-actions" className="sheet card flex flex-col gap-3 p-4 text-sm lg:animate-none">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -75,9 +83,6 @@ export function StaffReplyPanel({ requestId, status, staffNames, maxChars, canDr
         <div className="flex gap-2">
           {!closed && status !== "staff_reviewing" && (
             <button type="button" disabled={busy} onClick={() => run(() => markReviewingAction(requestId))} className="chip">Mark reviewing</button>
-          )}
-          {closed && (
-            <button type="button" disabled={busy} onClick={() => run(() => reopenRequestAction(requestId))} className="chip">Reopen</button>
           )}
         </div>
       </div>
@@ -90,7 +95,7 @@ export function StaffReplyPanel({ requestId, status, staffNames, maxChars, canDr
         </label>
         <label className="flex flex-col gap-1">
           <span className="eyebrow">Message</span>
-          <textarea id="staff-body" value={body} onChange={(e) => setBody(e.target.value)} rows={3} disabled={busy} maxLength={maxChars * 2}
+          <GrowingTextarea id="staff-body" value={body} onChange={(e) => setBody(e.target.value)} rows={3} disabled={busy} maxLength={maxChars * 2}
             onKeyDown={(e) => { if (shouldSendOnEnter(keyFacts(e))) { e.preventDefault(); void send(outcome); } }}
             placeholder="Write to this family" className="field" data-shortcut-focus />
           <span className="mono text-[11px] text-ink-3">{body.trim().length}/{maxChars} · goes to this family only; it does not change center policies<span className="hidden sm:inline" data-key-hint> · Enter sends, Shift+Enter new line</span></span>
@@ -112,7 +117,7 @@ export function StaffReplyPanel({ requestId, status, staffNames, maxChars, canDr
         <button type="button" disabled={busy} onClick={() => send(outcome)} className="btn-person flex-1 sm:flex-none sm:px-6">Send reply</button>
         {canDraft && (
           <button type="button" disabled={busy} onClick={sendAndDraft} className="btn-ghost" data-action="send-and-draft">
-            Send &amp; open knowledge draft
+            Send &amp; open Handbook draft
           </button>
         )}
       </div>

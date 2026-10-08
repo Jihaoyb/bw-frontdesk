@@ -226,7 +226,7 @@ describe("technical failure", () => {
     const derived = await deriveRequestOrigin(s.id, submissionId);
     expect(derived.origin).toBe("parent_initiated");
     const { request } = await createStaffRequest(s.id, { submissionId, question: I03, ...derived });
-    expect((await listInquiries(s.id))[0]).toMatchObject({ outcome: "staff_requested", requestId: request.id });
+    expect((await listInquiries(s.id))[0]).toMatchObject({ outcome: "failed", requestId: request.id });
     expect((await listMessages(s.id)).filter((m) => m.speaker === "parent")).toHaveLength(1);
   });
 }, 40000);

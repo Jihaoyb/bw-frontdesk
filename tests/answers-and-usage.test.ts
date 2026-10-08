@@ -251,7 +251,7 @@ describe("POST /api/ask", () => {
 });
 
 describe("failed answer → Ask staff", () => {
-  it("reuses the saved question message and marks the history row as sent to staff", async () => {
+  it("reuses the saved question and links staff without rewriting the AI outcome", async () => {
     const s = await openSession();
     const submissionId = randomUUID();
     setModelCallerForTests(async () => { throw new Error("down"); });
@@ -261,6 +261,6 @@ describe("failed answer → Ask staff", () => {
     expect(msgs).toHaveLength(1);
     expect(msgs[0]).toMatchObject({ speaker: "parent", requestId: request.id, id: request.questionMessageId });
     const [h] = await listInquiries(s.id);
-    expect(h).toMatchObject({ outcome: "staff_requested", requestId: request.id });
+    expect(h).toMatchObject({ outcome: "failed", requestId: request.id });
   });
 });

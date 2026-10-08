@@ -6,9 +6,9 @@ function Bar({ w, h = "h-3.5" }: { w: string; h?: string }) {
   return <div aria-hidden className={`skeleton ${h} ${w}`} />;
 }
 
-function Frame({ label, children }: { label: string; children: React.ReactNode }) {
+function Frame({ label, children, parent = false }: { label: string; children: React.ReactNode; parent?: boolean }) {
   return (
-    <div role="status" aria-busy="true" aria-label={label} className="mx-auto flex w-full max-w-7xl flex-1 gap-10 px-4 py-5 lg:px-8">
+    <div role="status" aria-busy="true" aria-label={label} className={`mx-auto flex w-full ${parent ? "max-w-[1104px]" : "max-w-7xl"} flex-1 gap-10 px-4 py-5 lg:px-8`}>
       {children}
     </div>
   );
@@ -27,8 +27,8 @@ function Rail() {
 
 export function ConversationFrame() {
   return (
-    <Frame label="Loading the conversation">
-      <main className="flex w-full min-w-0 max-w-[680px] flex-1 flex-col gap-6" aria-hidden>
+    <Frame label="Loading the conversation" parent>
+      <main className="flex w-full min-w-0 flex-1 flex-col gap-6" aria-hidden>
         <div className="flex flex-1 flex-col gap-6">
           <div className="flex justify-end"><div className="skeleton h-11 w-[60%] rounded-[20px]" /></div>
           <div className="flex max-w-[92%] flex-col gap-2.5"><Bar w="w-32" h="h-3" /><Bar w="w-[92%]" /><Bar w="w-[78%]" /><Bar w="w-[48%]" /></div>
@@ -44,8 +44,8 @@ export function ConversationFrame() {
 
 export function PoliciesFrame() {
   return (
-    <Frame label="Loading the policies">
-      <main className="flex w-full min-w-0 max-w-[680px] flex-1 flex-col gap-3" aria-hidden>
+    <Frame label="Loading the policies" parent>
+      <main className="flex w-full min-w-0 flex-1 flex-col gap-3" aria-hidden>
         <Bar w="w-40" h="h-6" />
         {[0, 1, 2, 3, 4, 5].map((i) => <div key={i} className="card flex items-center gap-3 px-4 py-3.5"><Bar w={i % 2 ? "w-1/2" : "w-2/3"} /><div className="ml-auto skeleton h-3 w-16" /></div>)}
       </main>
@@ -118,7 +118,7 @@ export function RequestFrame() {
 
 export function KnowledgeFrame() {
   return (
-    <Frame label="Loading the knowledge editor">
+    <Frame label="Loading the Handbook">
       <div className="grid w-full flex-1 gap-10 lg:grid-cols-[300px_minmax(0,1fr)]" aria-hidden>
         <div className="flex flex-col gap-2"><Bar w="w-28" h="h-6" />{[0, 1, 2, 3, 4, 5].map((i) => <div key={i} className="flex items-center gap-2.5 py-2"><div className="skeleton h-2 w-2 rounded-full" /><Bar w={i % 2 ? "w-1/2" : "w-2/3"} /></div>)}</div>
         <div className="flex flex-col gap-3">{[0, 1, 2].map((i) => <div key={i} className="card flex items-center gap-3 px-4 py-4"><Bar w="w-1/2" h="h-4" /><div className="ml-auto skeleton h-3 w-20" /></div>)}</div>

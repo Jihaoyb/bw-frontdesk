@@ -9,7 +9,7 @@ import { RequestCard, statusLabel } from "@/components/request-card";
 import { listEvidence, listInquiries } from "@/lib/inquiries";
 import { listRequestKnowledge } from "@/lib/knowledge";
 import { AI_ANSWERS_ENABLED, MAX_QUESTION_CHARS } from "@/lib/limits";
-import { listMessages, listRequests } from "@/lib/requests";
+import { getOrCreateConversation, listMessages, listRequests } from "@/lib/requests";
 import { getActiveSession } from "@/lib/request-session";
 import { readUsage } from "@/lib/usage";
 
@@ -18,9 +18,11 @@ export const dynamic = "force-dynamic";
 export default async function ParentPage() {
   const session = await getActiveSession();
   // One parallel batch (issue 015): nothing here waits on another page query.
-  const [messages, requests, inquiries, evidence, usage, policyEntries] = await Promise.all([
-    listMessages(session.id), listRequests(session.id), listInquiries(session.id), listEvidence(session.id), readUsage(session.id), listRequestKnowledge(session.id),
+  const [allMessages, requests, inquiries, evidence, usage, policyEntries, conversationId] = await Promise.all([
+    listMessages(session.id), listRequests(session.id), listInquiries(session.id), listEvidence(session.id), readUsage(session.id), listRequestKnowledge(session.id), getOrCreateConversation(session.id),
   ]);
+  const messages = allMessages.filter((m) => m.conversationId === conversationId);
+  const previousRequests = requests.filter((r) => r.conversationId !== conversationId);
   // A request card sits under the assistant's answer when there is one (the
   // handoff the parent accepted), else under the question itself.
   const anchorForRequest = new Map(inquiries.filter((i) => i.requestId && i.answerMessageId).map((i) => [i.requestId as string, i.answerMessageId as string]));
@@ -29,7 +31,7 @@ export default async function ParentPage() {
   );
   const questionOfRequest = new Set(requests.map((r) => r.questionMessageId));
   // Failed answers and abandoned claims (pending past the model timeout) both get the recovery card.
-  const failedByMessage = new Map(inquiries.filter((i) => (i.outcome === "failed" || isStalePending(i)) && i.questionMessageId).map((i) => [i.questionMessageId as string, i]));
+  const failedByMessage = new Map(inquiries.filter((i) => !i.requestId && (i.outcome === "failed" || isStalePending(i)) && i.questionMessageId).map((i) => [i.questionMessageId as string, i]));
   // Open offers: the front desk could not settle it and no request exists yet.
   const offerByAnswer = new Map(
     inquiries.filter((i) => (i.outcome === "handoff_offered" || i.outcome === "sensitive") && i.answerMessageId && !i.requestId).map((i) => [i.answerMessageId as string, i]));
@@ -37,17 +39,28 @@ export default async function ParentPage() {
   // Follow-ups (parent details, staff replies) render under their request card,
   // so the exchange reads alongside the original question after a refresh.
   const followUps = new Map<string, typeof messages>();
-  for (const m of messages) {
+  for (const m of allMessages) {
     if (m.requestId && !questionOfRequest.has(m.id)) followUps.set(m.requestId, [...(followUps.get(m.requestId) ?? []), m]);
   }
 
   return (
     <>
       {/* Issue 014: phone = one column; ≥1024px = conversation column plus a sticky rail (contact, your requests, session note). */}
-      <div className="mx-auto flex w-full max-w-7xl flex-1 gap-10 px-4 lg:px-8">
-        <main className="flex w-full min-w-0 max-w-[680px] flex-1 flex-col">
-          <Composer savedMessageIds={messages.map((m) => m.id)} maxChars={MAX_QUESTION_CHARS} usage={usage} aiEnabled={AI_ANSWERS_ENABLED}
-            footer={<><div className="lg:hidden"><CenterInfo /></div><p className="text-xs text-ink-3 lg:hidden" data-session-note>{sessionNote}</p></>}>
+      <div className="mx-auto flex w-full max-w-[1104px] flex-1 gap-10 px-4 lg:px-8">
+        <main className="flex w-full min-w-0 flex-1 flex-col">
+          <Composer key={conversationId} conversationId={conversationId} savedMessageIds={messages.map((m) => m.id)} maxChars={MAX_QUESTION_CHARS} usage={usage} aiEnabled={AI_ANSWERS_ENABLED}
+            footer={<>
+              {previousRequests.length > 0 && <section aria-label="Requests from previous chats" className="space-y-4 border-t border-line pt-5">
+                <h2 className="eyebrow">Requests from previous chats</h2>
+                {previousRequests.map((req) => <details key={req.id} id={`request-${req.id}`} className="card p-3">
+                  <summary className="cursor-pointer py-2 text-sm font-medium">{req.question} · {statusLabel[req.status]}</summary>
+                  <div className="space-y-3 pt-3"><RequestCard request={req} knownPolicy={knownPolicies.get(req.id) ?? null} />
+                    {(followUps.get(req.id) ?? []).map((m) => <MessageBubble key={m.id} message={m} viewer="parent" />)}
+                    <ParentReplyForm requestId={req.id} maxChars={MAX_QUESTION_CHARS} closed={req.status === 'closed'} />
+                  </div>
+                </details>)}
+              </section>}
+              <div className="lg:hidden"><CenterInfo /></div><p className="text-xs text-ink-3 lg:hidden" data-session-note>{sessionNote}</p></>}>
             <h2 id="conversation" className="sr-only">Conversation</h2>
             {messages.length === 0 && (
               <div className="rise flex flex-col gap-2 py-6">
@@ -115,4 +128,4 @@ export default async function ParentPage() {
 }
 
 const sessionNote =
-  "This conversation lives in this browser's demo session and stays until the demo is reset; it is not tied to an account and does not expire on its own. Messages you send to school staff can be read by staff in this demo. Reset demo (Staff view) deletes this conversation, its requests, and any published updates.";
+  "Conversations live in this browser's demo session and stay until the demo is reset; this demo is not tied to an account and does not expire on its own. Messages you send to school staff can be read by staff in this demo. Start over keeps earlier chats and requests for staff. Reset demo (Operator view) deletes all chats, requests, and published updates.";

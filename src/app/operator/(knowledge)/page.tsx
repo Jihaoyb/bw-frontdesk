@@ -1,3 +1,4 @@
+import { isHandbookCategory } from "@/lib/handbook-categories";
 import { CenterInfo } from "@/components/center-info";
 import { KnowledgeEditor } from "@/components/knowledge-editor";
 import { ResetDemo } from "@/components/reset-demo";
@@ -9,9 +10,9 @@ export const dynamic = "force-dynamic";
 export default async function OperatorPage({
   searchParams,
 }: {
-  searchParams: Promise<{ reset?: string; saved?: string; published?: string; error?: string }>;
+  searchParams: Promise<{ category?: string; reset?: string; saved?: string; published?: string; error?: string }>;
 }) {
-  const { reset, saved, published, error } = await searchParams;
+  const { reset, saved, published, error, category } = await searchParams;
   const session = await getActiveSession();
   const entries = await listAllKnowledge(session.id);
   const notice = error
@@ -24,7 +25,7 @@ export default async function OperatorPage({
   return (
     <>
       <main className="mx-auto w-full max-w-7xl flex-1 space-y-8 px-4 py-5 lg:px-8">
-        <KnowledgeEditor entries={entries} notice={notice} />
+        <KnowledgeEditor entries={entries} notice={notice} category={isHandbookCategory(category) ? category : undefined} />
         <div className="grid gap-4 lg:grid-cols-[300px_minmax(0,1fr)] lg:gap-10">
           <div />
           <div className="flex max-w-[760px] flex-col gap-3">

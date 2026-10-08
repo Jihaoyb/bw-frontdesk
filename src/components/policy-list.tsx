@@ -23,7 +23,7 @@ export function PolicyList({ entries }: { entries: KnowledgeEntry[] }) {
               </summary>
               <div className="reveal">
                 <div className="px-4 pb-4 text-sm leading-relaxed text-ink-2">
-                  <p className="whitespace-pre-wrap">{e.policyText}</p>
+                  <p className="whitespace-pre-wrap [overflow-wrap:anywhere]">{e.policyText}</p>
                   <p className="mono mt-2 text-[11px] text-ink-3">{formatPublished(e.publishedAt)}</p>
                 </div>
               </div>

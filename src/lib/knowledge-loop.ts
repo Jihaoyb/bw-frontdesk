@@ -7,7 +7,7 @@ import { getRequest, type StaffRequest } from "./requests";
 // family and never grounding material. Opening a draft from a request links the
 // request to an ordinary issue-006 knowledge draft; publishing stays explicit.
 
-/** Whether a knowledge update has been opened or published for this request. Not a judgment that policy is missing. */
+/** Whether a Handbook update has been opened or published for this request. Not a judgment that policy is missing. */
 export type KnowledgeGapState = "none" | "gap" | "draft" | "published";
 
 export function knowledgeGapState(request: Pick<StaffRequest, "origin" | "knowledgeDraftEntryId">, draftEntry: KnowledgeEntry | null): KnowledgeGapState {
@@ -21,10 +21,10 @@ export function knowledgeGapState(request: Pick<StaffRequest, "origin" | "knowle
 // policy is actually missing is the operator's call: a request that needs a
 // staff decision under a complete policy (a same-day lunch) is not a gap.
 export const gapLabel: Record<KnowledgeGapState, string> = {
-  none: "No knowledge update",
-  gap: "No knowledge update yet",
+  none: "No Handbook update",
+  gap: "No Handbook update yet",
   draft: "Draft open, not published",
-  published: "Knowledge published",
+  published: "Handbook published",
 };
 
 export type OpenDraftResult = { ok: true; entry: KnowledgeEntry; created: boolean } | { ok: false; error: "not_found" | "sensitive" | "invalid" };

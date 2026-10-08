@@ -1,3 +1,4 @@
+import { seedCategories } from "./handbook-categories";
 import { randomUUID } from "node:crypto";
 import type { PoolClient } from "pg";
 import { getPool } from "./db";
@@ -16,14 +17,13 @@ export function newSessionId(): string {
 export type DemoSession = { id: string; createdAt: Date; resetCount: number };
 
 async function seedSessionContent(client: PoolClient, sessionId: string): Promise<void> {
-  // One conversation per session, created up front so the ask path can insert
-  // a question in a single statement.
-  await client.query("INSERT INTO conversations (session_id) VALUES ($1)", [sessionId]);
+  // Start with an active conversation; restarts retain older conversations.
+  await client.query("INSERT INTO conversations (session_id, is_active) VALUES ($1, true)", [sessionId]);
   for (const [i, entry] of seedKnowledge.entries()) {
     await client.query(
-      `INSERT INTO knowledge_entries (session_id, seed_key, title, policy_text, published_at, sort_order)
-       VALUES ($1, $2, $3, $4, $5, $6)`,
-      [sessionId, entry.key, entry.title, entry.policyText, SEED_PUBLISHED_AT, i],
+      `INSERT INTO knowledge_entries (session_id, seed_key, title, policy_text, published_at, sort_order, category)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      [sessionId, entry.key, entry.title, entry.policyText, SEED_PUBLISHED_AT, i, seedCategories[entry.key] ?? "Other"],
     );
   }
 }

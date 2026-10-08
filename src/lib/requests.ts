@@ -76,18 +76,18 @@ const toMessage = (r: MessageRow): Message => ({
   id: r.id, conversationId: r.conversation_id, requestId: r.request_id, speaker: r.speaker, staffName: r.staff_name, body: r.body, createdAt: r.created_at,
 });
 
-/** The session's single parent conversation for this prototype, created on demand. */
+/** Active conversation, with a unique index protecting concurrent initialization. */
 export async function getOrCreateConversation(sessionId: string, client?: PoolClient): Promise<string> {
   const q = client ?? getPool();
   const existing = await q.query<{ id: string }>(
-    "SELECT id FROM conversations WHERE session_id = $1 ORDER BY created_at LIMIT 1", [sessionId]);
+    "SELECT id FROM conversations WHERE session_id = $1 AND is_active", [sessionId]);
   if (existing.rows[0]) return existing.rows[0].id;
   const created = await q.query<{ id: string }>(
-    "INSERT INTO conversations (session_id) VALUES ($1) RETURNING id", [sessionId]);
+    "INSERT INTO conversations (session_id, is_active) VALUES ($1, true) ON CONFLICT (session_id) WHERE is_active DO UPDATE SET is_active = true RETURNING id", [sessionId]);
   return created.rows[0].id;
 }
 
-export type CreateRequestInput = { submissionId: string; question: string; origin: RequestOrigin; knownPolicyEntryId?: string | null };
+export type CreateRequestInput = { conversationId?: string; submissionId: string; question: string; origin: RequestOrigin; knownPolicyEntryId?: string | null };
 export type CreateRequestResult = { request: StaffRequest; created: boolean };
 
 /**
@@ -104,7 +104,13 @@ export async function createStaffRequest(sessionId: string, input: CreateRequest
   const client = await getPool().connect();
   try {
     await client.query("BEGIN");
-    const conversationId = await getOrCreateConversation(sessionId, client);
+    await client.query("SELECT id FROM demo_sessions WHERE id = $1 FOR UPDATE", [sessionId]);
+    const priorInquiry = await client.query<{ conversation_id: string }>(
+      "SELECT conversation_id FROM inquiries WHERE session_id = $1 AND submission_id = $2", [sessionId, input.submissionId]);
+    const active = await getOrCreateConversation(sessionId, client);
+    // A delayed handoff or retry belongs to the original inquiry, even after restart.
+    const conversationId = priorInquiry.rows[0]?.conversation_id ?? active;
+    if (!priorInquiry.rowCount && input.conversationId && input.conversationId !== active) throw new Error("conversation_changed");
     // Claim the submission identity first; a concurrent duplicate blocks here
     // until we commit, then sees the conflict and returns nothing.
     const claimed = await client.query<RequestRow>(

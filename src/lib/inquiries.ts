@@ -17,6 +17,7 @@ export type InquiryOutcome = "pending" | "chat" | "answered" | "clarified" | "ha
 export type Inquiry = {
   id: string;
   sessionId: string;
+  conversationId?: string;
   submissionId: string;
   questionMessageId: string | null;
   answerMessageId: string | null;
@@ -32,12 +33,12 @@ export type Inquiry = {
 export type Evidence = { id: string; messageId: string; entryId: string | null; title: string; policyText: string; publishedAt: Date | null };
 
 type InquiryRow = {
-  id: string; session_id: string; submission_id: string; question_message_id: string | null; answer_message_id: string | null;
+  id: string; session_id: string; conversation_id: string; submission_id: string; question_message_id: string | null; answer_message_id: string | null;
   request_id: string | null; question: string; outcome: InquiryOutcome; failure_reason: string | null; created_at: Date; updated_at: Date;
 };
-const COLS = "id, session_id, submission_id, question_message_id, answer_message_id, request_id, question, outcome, failure_reason, created_at, updated_at";
+const COLS = "id, session_id, conversation_id, submission_id, question_message_id, answer_message_id, request_id, question, outcome, failure_reason, created_at, updated_at";
 const toInquiry = (r: InquiryRow): Inquiry => ({
-  id: r.id, sessionId: r.session_id, submissionId: r.submission_id, questionMessageId: r.question_message_id,
+  id: r.id, sessionId: r.session_id, conversationId: r.conversation_id, submissionId: r.submission_id, questionMessageId: r.question_message_id,
   answerMessageId: r.answer_message_id, requestId: r.request_id, question: r.question, outcome: r.outcome,
   failureReason: r.failure_reason, createdAt: r.created_at, updatedAt: r.updated_at,
 });
@@ -83,8 +84,8 @@ export async function recordStaffRequestInquiry(
      VALUES ($1, $2, $3, $4, $5, $6, 'staff_requested')
      ON CONFLICT (session_id, submission_id) DO UPDATE
        SET request_id = EXCLUDED.request_id, updated_at = now(),
-           outcome = CASE WHEN inquiries.outcome IN ('failed', 'pending') THEN 'staff_requested' ELSE inquiries.outcome END,
-           failure_reason = CASE WHEN inquiries.outcome IN ('failed', 'pending') THEN NULL ELSE inquiries.failure_reason END`,
+           outcome = CASE WHEN inquiries.outcome = 'pending' THEN 'staff_requested' ELSE inquiries.outcome END,
+           failure_reason = CASE WHEN inquiries.outcome = 'pending' THEN NULL ELSE inquiries.failure_reason END`,
     [sessionId, input.conversationId, input.submissionId, input.questionMessageId, input.requestId, input.question],
   );
 }
@@ -131,7 +132,7 @@ export type AskResult =
  * Allowance is consumed only when the model is actually dispatched.
  */
 export async function askFrontDesk(
-  sessionId: string, input: { submissionId: string; question: string; usageDay?: string },
+  sessionId: string, input: { conversationId?: string; submissionId: string; question: string; usageDay?: string },
 ): Promise<AskResult> {
   if (!UUID_RE.test(sessionId)) throw new Error("invalid session id");
   if (!validateSubmissionId(input.submissionId)) throw new Error("invalid submission id");
@@ -139,7 +140,11 @@ export async function askFrontDesk(
   if (!v.ok) throw new Error(`invalid question: ${v.error.reason}`);
 
   // 1. Claim or find the inquiry and save the parent's message once.
-  const inquiry = await claimInquiry(sessionId, input.submissionId, v.question);
+  const inquiry = await claimInquiry(sessionId, input.submissionId, v.question, input.conversationId);
+  if (inquiry.requestId) {
+    const request = await getRequest(sessionId, inquiry.requestId);
+    if (request) return { status: "staff_requested", inquiry, request, usage: null };
+  }
   if (inquiry.outcome !== "pending" && inquiry.outcome !== "failed") return await replay(sessionId, inquiry);
   if (inquiry.outcome === "pending" && !inquiry.fresh) return { status: "pending", inquiry };
 
@@ -164,7 +169,24 @@ export async function askFrontDesk(
 
 type Claimed = Inquiry & { fresh: boolean };
 
-async function claimInquiry(sessionId: string, submissionId: string, question: string): Promise<Claimed> {
+async function claimInquiry(sessionId: string, submissionId: string, question: string, expectedConversation?: string): Promise<Claimed> {
+  const client = await getPool().connect();
+  try {
+    await client.query("BEGIN");
+    await client.query("SELECT id FROM demo_sessions WHERE id = $1 FOR UPDATE", [sessionId]);
+    const prior = await client.query("SELECT id FROM inquiries WHERE session_id = $1 AND submission_id = $2", [sessionId, submissionId]);
+    const active = await getOrCreateConversation(sessionId, client);
+    if (!prior.rowCount && expectedConversation && expectedConversation !== active) throw new Error("conversation_changed");
+    const result = await claimInquiryWithClient(client, sessionId, submissionId, question);
+    await client.query("COMMIT");
+    return result;
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally { client.release(); }
+}
+
+async function claimInquiryWithClient(client: PoolClient, sessionId: string, submissionId: string, question: string): Promise<Claimed> {
   // One statement for the common case: insert the inquiry and its parent
   // message, linked by ids generated here (a statement cannot read rows its
   // own CTEs inserted, so the link cannot be an UPDATE). A duplicate
@@ -172,33 +194,33 @@ async function claimInquiry(sessionId: string, submissionId: string, question: s
   const inquiryId = randomUUID();
   const messageId = randomUUID();
   const claimSql = `
-    WITH conv AS (SELECT id FROM conversations WHERE session_id = $1 ORDER BY created_at LIMIT 1),
+    WITH conv AS (SELECT id FROM conversations WHERE session_id = $1 AND is_active),
          q AS (INSERT INTO inquiries (id, session_id, conversation_id, submission_id, question, outcome, question_message_id)
                SELECT $4, $1, conv.id, $2, $3, 'pending', $5 FROM conv
-               ON CONFLICT (session_id, submission_id) DO NOTHING RETURNING ${COLS}, conversation_id),
+               ON CONFLICT (session_id, submission_id) DO NOTHING RETURNING ${COLS}),
          m AS (INSERT INTO messages (id, session_id, conversation_id, speaker, body)
                SELECT $5, $1, q.conversation_id, 'parent', $3 FROM q RETURNING id)
     SELECT ${COLS} FROM q`;
   const params = [sessionId, submissionId, question, inquiryId, messageId];
-  let claimed = await getPool().query<InquiryRow>(claimSql, params);
+  let claimed = await client.query<InquiryRow>(claimSql, params);
   if (!claimed.rowCount) {
-    const existing = await getPool().query<InquiryRow>(
+    const existing = await client.query<InquiryRow>(
       `SELECT ${COLS} FROM inquiries WHERE session_id = $1 AND submission_id = $2`, [sessionId, submissionId]);
     if (!existing.rows[0]) {
       // No conversation yet (session predates seeding one): create it, claim again.
-      await getOrCreateConversation(sessionId);
-      claimed = await getPool().query<InquiryRow>(claimSql, params);
+      await getOrCreateConversation(sessionId, client);
+      claimed = await client.query<InquiryRow>(claimSql, params);
       if (claimed.rows[0]) return { ...toInquiry(claimed.rows[0]), fresh: true };
-      const raced = await getPool().query<InquiryRow>(`SELECT ${COLS} FROM inquiries WHERE session_id = $1 AND submission_id = $2`, [sessionId, submissionId]);
+      const raced = await client.query<InquiryRow>(`SELECT ${COLS} FROM inquiries WHERE session_id = $1 AND submission_id = $2`, [sessionId, submissionId]);
       existing.rows[0] = raced.rows[0];
     }
     const row = toInquiry(existing.rows[0]);
-    if (row.outcome === "failed" || row.outcome === "pending") {
+    if (!row.requestId && (row.outcome === "failed" || row.outcome === "pending")) {
       // Retry: a failed row goes back to pending so a concurrent duplicate
       // sees in-flight work. A pending row is reclaimed only once it is stale
       // (older than the model timeout plus grace): the process that claimed
       // it died mid-flight, and nothing else will ever finish it.
-      const again = await getPool().query<InquiryRow>(
+      const again = await client.query<InquiryRow>(
         `UPDATE inquiries SET outcome = 'pending', failure_reason = NULL, updated_at = now()
          WHERE id = $1 AND session_id = $2
            AND (outcome = 'failed' OR (outcome = 'pending' AND updated_at < now() - ($3::int * interval '1 millisecond')))
@@ -213,7 +235,7 @@ async function claimInquiry(sessionId: string, submissionId: string, question: s
 
 async function recentTurns(sessionId: string, excludeMessageId: string | null) {
   const res = await getPool().query<{ speaker: "parent" | "assistant"; body: string }>(
-    `SELECT speaker, body FROM messages WHERE session_id = $1 AND speaker IN ('parent', 'assistant') AND id IS DISTINCT FROM $2::uuid
+    `SELECT speaker, body FROM messages WHERE session_id = $1 AND conversation_id = (SELECT conversation_id FROM messages WHERE id = $2::uuid AND session_id = $1) AND speaker IN ('parent', 'assistant') AND id IS DISTINCT FROM $2::uuid
      ORDER BY created_at DESC LIMIT $3`, [sessionId, excludeMessageId, CONTEXT_TURNS]);
   return res.rows.reverse();
 }

@@ -21,7 +21,7 @@ export function MessageBubble({ message, viewer, sources = [] }: { message: Mess
       <div className={"rise flex flex-col gap-1 " + (mine ? "items-end" : "items-start")} data-speaker="parent">
         <div className="px-1 text-xs text-ink-3"><span className="font-medium text-ink">{who}</span> · {time}</div>
         <div className={"max-w-[82%] rounded-[20px] bg-ink px-4 py-3 text-base leading-[1.4] text-white " + (mine ? "rounded-br-md" : "rounded-bl-md")}>
-          <p className="whitespace-pre-wrap">{m.body}</p>
+          <p className="whitespace-pre-wrap [overflow-wrap:anywhere]">{m.body}</p>
         </div>
       </div>
     );
@@ -37,7 +37,7 @@ export function MessageBubble({ message, viewer, sources = [] }: { message: Mess
           <span aria-hidden>·</span>{time}
         </div>
         <div className="rounded-2xl border border-[#f1e3c2] bg-[#fffbef] px-4 py-3 text-base leading-[1.45]">
-          <p className="whitespace-pre-wrap">{m.body}</p>
+          <p className="whitespace-pre-wrap [overflow-wrap:anywhere]">{m.body}</p>
         </div>
       </div>
     );
@@ -50,7 +50,7 @@ export function MessageBubble({ message, viewer, sources = [] }: { message: Mess
         <span className="font-medium text-ink">{who}</span>
         <span>· automated ·</span>{time}
       </div>
-      <p className="measure whitespace-pre-wrap">{m.body}</p>
+      <p className="measure whitespace-pre-wrap [overflow-wrap:anywhere]">{m.body}</p>
       {sources.length > 0 && <Sources sources={sources} />}
     </div>
   );
@@ -70,7 +70,7 @@ export function Sources({ sources }: { sources: Evidence[] }) {
           <div className="reveal">
             <blockquote className="m-0 flex flex-col gap-2 px-3.5 pb-3.5">
               <p className="eyebrow">Exact published text</p>
-              <p className="whitespace-pre-wrap text-sm leading-relaxed text-ink-2">{s.policyText}</p>
+              <p className="whitespace-pre-wrap [overflow-wrap:anywhere] text-sm leading-relaxed text-ink-2">{s.policyText}</p>
               <p className="mono text-[11px] text-ink-3">{formatPublished(s.publishedAt)} · as cited at answer time{s.entryId ? "" : " · entry since removed"}</p>
             </blockquote>
           </div>

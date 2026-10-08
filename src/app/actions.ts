@@ -59,6 +59,7 @@ export async function parentReplyAction(requestId: string, body: string, submiss
 
 
 const knowledgeErrorCopy: Record<KnowledgeWriteError, string> = {
+  invalid_category: "Choose a Handbook category.",
   invalid_title: "Add a title, and keep it short.",
   invalid_text: "Add the policy text, and keep it under the character limit.",
   not_found: "This entry is not in your demo session.",
@@ -73,14 +74,14 @@ function backToKnowledge(result: { ok: true; entry: { id: string } } | { ok: fal
 
 export async function createKnowledgeAction(formData: FormData): Promise<void> {
   const session = await getActiveSession();
-  const input = { title: formData.get("title"), policyText: formData.get("policyText") };
+  const input = { category: formData.get("category") ?? undefined, title: formData.get("title"), policyText: formData.get("policyText") };
   backToKnowledge(await createKnowledgeDraft(session.id, input as { title: string; policyText: string }), "saved");
 }
 
 export async function saveKnowledgeDraftAction(formData: FormData): Promise<void> {
   const session = await getActiveSession();
   const entryId = String(formData.get("entryId") ?? "");
-  const input = { title: formData.get("title"), policyText: formData.get("policyText") };
+  const input = { category: formData.get("category") ?? undefined, title: formData.get("title"), policyText: formData.get("policyText") };
   backToKnowledge(await saveKnowledgeDraft(session.id, entryId, input as { title: string; policyText: string }), "saved");
 }
 
@@ -89,7 +90,7 @@ export async function publishKnowledgeAction(formData: FormData): Promise<void> 
   const entryId = String(formData.get("entryId") ?? "");
   // One statement: the text on this form is what goes live, never a draft
   // another tab saved in between.
-  const reviewed = { title: String(formData.get("title") ?? ""), policyText: String(formData.get("policyText") ?? "") };
+  const reviewed = { category: (formData.get("category") ?? undefined) as import("@/lib/handbook-categories").HandbookCategory | undefined, title: String(formData.get("title") ?? ""), policyText: String(formData.get("policyText") ?? "") };
   backToKnowledge(await publishKnowledge(session.id, entryId, reviewed), "published");
 }
 
@@ -103,7 +104,7 @@ export async function openKnowledgeDraftAction(requestId: string, suggestedText?
   if (!result.ok) {
     return {
       ok: false,
-      error: result.error === "sensitive" ? "Sensitive requests do not get a knowledge draft." : result.error === "not_found" ? errorCopy.not_found : "Could not open a draft.",
+      error: result.error === "sensitive" ? "Sensitive requests do not get a Handbook draft." : result.error === "not_found" ? errorCopy.not_found : "Could not open a draft.",
     };
   }
   revalidatePath("/", "layout");
@@ -115,4 +116,16 @@ export async function openKnowledgeDraftFormAction(formData: FormData): Promise<
   const requestId = String(formData.get("requestId") ?? "");
   const result = await openKnowledgeDraftAction(requestId, null);
   redirect(result.ok ? result.href : `/operator/inbox/${requestId}?error=${encodeURIComponent(result.error)}`);
+}
+
+export async function startOverAction(conversationId: string): Promise<{ ok: boolean; error?: string }> {
+  const session = await getActiveSession();
+  try {
+    const { startNewConversation } = await import("@/lib/conversations");
+    await startNewConversation(session.id, conversationId);
+    revalidatePath("/", "layout");
+    return { ok: true };
+  } catch {
+    return { ok: false, error: "Could not start a new chat. Wait for pending messages, then retry." };
+  }
 }

@@ -10,8 +10,8 @@ export default async function ParentPoliciesPage() {
   const entries = await listPublishedKnowledge(session.id);
   return (
     <>
-      <div className="mx-auto flex w-full max-w-7xl flex-1 gap-10 px-4 py-5 lg:px-8">
-        <main className="flex w-full min-w-0 max-w-[680px] flex-1 flex-col gap-6">
+      <div className="mx-auto flex w-full max-w-[1104px] flex-1 gap-10 px-4 py-5 lg:px-8">
+        <main className="flex w-full min-w-0 flex-1 flex-col gap-6">
           <PolicyList entries={entries} />
           <div className="lg:hidden"><CenterInfo /></div>
         </main>

@@ -1,5 +1,6 @@
 "use client";
 
+import { GrowingTextarea } from "./growing-textarea";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { parentReplyAction } from "@/app/actions";
@@ -31,7 +32,7 @@ export function ParentReplyForm({ requestId, maxChars, closed }: { requestId: st
       <label htmlFor={`reply-${requestId}`} className="eyebrow">
         {closed ? "Add to this request (reopens it)" : "Add details for staff"}
       </label>
-      <textarea
+      <GrowingTextarea
         id={`reply-${requestId}`} value={body} onChange={(e) => setBody(e.target.value)} rows={2} disabled={busy}
         maxLength={maxChars * 2} placeholder="Add details or a follow-up question"
         onKeyDown={(e) => { if (shouldSendOnEnter(keyFacts(e))) { e.preventDefault(); void submit(); } }}

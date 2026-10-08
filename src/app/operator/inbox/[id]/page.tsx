@@ -1,3 +1,5 @@
+import { InboxSummary } from "@/components/inbox-summary";
+import { OutcomePill } from "@/components/outcome-pill";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { openKnowledgeDraftFormAction } from "@/app/actions";
@@ -6,12 +8,12 @@ import { MessageBubble, messageTime } from "@/components/message-bubble";
 import { formatPublished } from "@/components/policy-list";
 import { originLabel, StatusPill } from "@/components/request-card";
 import { StaffReplyPanel } from "@/components/staff-reply-panel";
-import { listInquiries } from "@/lib/inquiries";
+import { listEvidence, listInquiries } from "@/lib/inquiries";
 import { listRequestKnowledge, type KnowledgeEntry } from "@/lib/knowledge";
 import { draftEntriesFrom, gapLabel, knowledgeGapState, type KnowledgeGapState } from "@/lib/knowledge-loop";
 import { MAX_QUESTION_CHARS } from "@/lib/limits";
 import { matchCount, matchingCounts } from "@/lib/matching";
-import { getRequest, listContextBeforeRequest, listRequestMessages, listRequests, STAFF_NAMES } from "@/lib/requests";
+import { getRequest, listMessages, listRequestMessages, listRequests, STAFF_NAMES } from "@/lib/requests";
 import { getActiveSession } from "@/lib/request-session";
 
 export const dynamic = "force-dynamic";
@@ -25,15 +27,18 @@ export default async function RequestPage({ params, searchParams }: { params: Pr
   const session = await getActiveSession();
   // One parallel batch (issue 015). Every query is session-scoped, so an id from
   // another session yields no request and the page is not found.
-  const [request, requests, inquiries, messages, context, policies] = await Promise.all([
+  const [request, requests, inquiries, messages, policies, evidence, allMessages] = await Promise.all([
     getRequest(session.id, id),
     listRequests(session.id),
     listInquiries(session.id),
     listRequestMessages(session.id, id),
-    listContextBeforeRequest(session.id, id),
     listRequestKnowledge(session.id),
+    listEvidence(session.id),
+    listMessages(session.id),
   ]);
   if (!request) notFound();
+  const inquiry = inquiries.find((i) => i.requestId === request.id);
+  const answer = allMessages.find((m) => m.id === inquiry?.answerMessageId);
   const drafts = draftEntriesFrom(requests, policies);
   const counts = matchingCounts(inquiries);
   const requestCounts = new Map(requests.map((r) => [r.id, matchCount(counts, r)]));
@@ -44,16 +49,17 @@ export default async function RequestPage({ params, searchParams }: { params: Pr
 
   return (
     <>
+      <div className="mx-auto w-full max-w-7xl px-4 pt-5 lg:px-8"><InboxSummary inquiries={inquiries} /></div>
       <div className="mx-auto grid w-full max-w-7xl flex-1 gap-10 px-4 py-5 lg:grid-cols-[400px_minmax(0,1fr)] lg:px-8">
         <div className="hidden lg:block">
-          <div className="sticky top-20">
-            <InboxList requests={requests} drafts={drafts} policies={policies} counts={requestCounts} filter={filter} activeId={request.id} />
+          <div className="sticky top-36">
+            <InboxList requests={requests} inquiries={inquiries} drafts={drafts} policies={policies} counts={requestCounts} filter={filter} activeId={request.id} />
           </div>
         </div>
 
         <main className="flex min-w-0 max-w-[760px] flex-col gap-5">
           <div className="flex flex-wrap items-center gap-3 text-xs text-ink-3">
-            <Link href="/operator/inbox" className="btn-ghost h-10 min-h-0 w-10 px-0 lg:hidden" aria-label="Back to inbox">
+            <Link href={`/operator/inbox?filter=${filter}#item-${request.id}`} className="btn-ghost h-10 min-h-0 w-10 px-0 lg:hidden" aria-label="Back to inbox">
               <svg aria-hidden width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 18l-6-6 6-6" /></svg>
             </Link>
             <StatusPill status={request.status} />
@@ -62,22 +68,10 @@ export default async function RequestPage({ params, searchParams }: { params: Pr
             <span className="mono">· {messageTime.format(request.createdAt)}</span>
           </div>
 
+          {inquiry && <OutcomePill outcome={inquiry.outcome} />}
           <h2 className="text-[24px] font-semibold leading-[1.25] tracking-[-0.02em] lg:text-[28px]">{request.question}</h2>
 
-          {context.length > 0 && (
-            <details className="card text-sm" data-context-count={context.length}>
-              <summary className="flex min-h-12 cursor-pointer list-none items-center gap-2.5 px-3.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand">
-                <svg aria-hidden width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="text-ink-3"><path d="M4 5h16v11H8l-4 4z" /></svg>
-                <span className="flex-1">What the family saw before asking <span className="text-ink-3">· {context.length} message{context.length === 1 ? "" : "s"}</span></span>
-                <svg aria-hidden width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="chev text-ink-3"><path d="M6 9l6 6 6-6" /></svg>
-              </summary>
-              <div className="reveal">
-                <ol className="space-y-4 px-3.5 pb-4 pt-1">
-                  {context.map((m) => <li key={m.id}><MessageBubble message={m} viewer="operator" /></li>)}
-                </ol>
-              </div>
-            </details>
-          )}
+          {answer && <MessageBubble message={answer} viewer="operator" sources={evidence.get(answer.id) ?? []} />}
 
           <div className="grid gap-2.5 sm:grid-cols-2">
             <div className="card flex flex-col gap-1.5 p-3.5">
@@ -97,7 +91,7 @@ export default async function RequestPage({ params, searchParams }: { params: Pr
           <section aria-labelledby="thread" className="flex flex-col gap-3">
             <h3 id="thread" className="eyebrow">Messages on this request</h3>
             <ol className="space-y-4">
-              {messages.map((m) => <li key={m.id}><MessageBubble message={m} viewer="operator" /></li>)}
+              {messages.map((m) => <li key={m.id}><MessageBubble message={m} viewer="operator" sources={evidence.get(m.id) ?? []} /></li>)}
             </ol>
           </section>
 
@@ -115,11 +109,11 @@ function KnowledgeUpdate({ requestId, gap, draftEntry, error }: { requestId: str
   const tone = gap === "published" ? "text-brand-deep" : gap === "draft" ? "text-person-deep" : "text-ink-2";
   return (
     <div className="card flex flex-col gap-1.5 p-3.5" data-knowledge-note={gap}>
-      <p className="eyebrow">Knowledge</p>
+      <p className="eyebrow">Handbook</p>
       <p className={"text-sm font-medium leading-[1.35] " + tone} data-gap={gap}>{gapLabel[gap]}</p>
       {error ? <p role="alert" className="text-xs text-alert">{error}</p> : null}
       {gap === "none" ? (
-        <p className="text-xs text-ink-3">Sensitive request: handled by staff directly. No knowledge update is suggested.</p>
+        <p className="text-xs text-ink-3">Sensitive request: handled by staff directly. No Handbook update is suggested.</p>
       ) : gap === "gap" ? (
         <>
           <p className="text-xs leading-relaxed text-ink-3">Replies and closing publish nothing. If this showed a gap in the policies, open a draft; if the policy is complete and the family needs a decision, a reply is all it takes.</p>
@@ -132,7 +126,7 @@ function KnowledgeUpdate({ requestId, gap, draftEntry, error }: { requestId: str
         <p className="text-xs leading-relaxed text-ink-3">
           {draftEntry ? <><span className="font-medium text-ink-2">{draftEntry.title}</span> · {gap === "published" ? formatPublished(draftEntry.publishedAt) : "draft saved, not published"}. </> : null}
           <Link href={`/operator?saved=${draftEntry?.id ?? ""}#entry-${draftEntry?.id ?? ""}`} className="underline decoration-line underline-offset-2 hover:decoration-ink-3">
-            {gap === "published" ? "View in Knowledge" : "Review and publish in Knowledge"}
+            {gap === "published" ? "View in Handbook" : "Review and publish in Handbook"}
           </Link>
           {gap === "draft" ? " Until it is published, parents and the AI still see the old text." : ""}
         </p>

@@ -22,10 +22,10 @@ describe("inbox filters", () => {
     expect(applyFilter(rows, "action").map((r) => r.id)).toEqual(["a"]);
     expect(applyFilter(rows, "closed").map((r) => r.id)).toEqual(["d"]);
   });
-  it("defaults to Open; the retired `all` and anything unknown fall back to it", () => {
-    expect(parseFilter(undefined)).toBe("open");
-    expect(parseFilter("all")).toBe("open");
-    expect(parseFilter("nonsense")).toBe("open");
+  it("defaults to Needs action and supports complete history", () => {
+    expect(parseFilter(undefined)).toBe("action");
+    expect(parseFilter("all")).toBe("all");
+    expect(parseFilter("nonsense")).toBe("action");
     expect(parseFilter("closed")).toBe("closed");
     expect(parseFilter("action")).toBe("action");
   });

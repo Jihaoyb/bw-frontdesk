@@ -1,5 +1,7 @@
 "use client";
 
+import { useTrackDelivery } from "./conversation-delivery";
+
 // Delivery feedback for a message or action: did the server confirm the save?
 // This is separate from the request's progress label, which only staff change.
 export type Delivery =
@@ -10,6 +12,7 @@ export type Delivery =
   | { kind: "unconfirmed" };
 
 export function DeliveryStatus({ delivery }: { delivery: Delivery }) {
+  useTrackDelivery(delivery.kind === "saving" || delivery.kind === "unconfirmed");
   return (
     <p role="status" aria-live="polite" className="min-h-5 text-sm empty:hidden" data-delivery={delivery.kind}>
       {delivery.kind === "saving" && <span className="text-ink-3">Saving…</span>}

@@ -59,7 +59,7 @@ describe("audit fixes", () => {
     let calls = 0;
     setModelCallerForTests(async () => { calls++; return { kind: "answer", text: "Closed those days.", source_ids: [], contact_staff: false }; });
     // simulate a claim whose process died: pending, never finished
-    const conv = await getPool().query("INSERT INTO conversations (session_id) VALUES ($1) RETURNING id", [s.id]);
+    const conv = await getPool().query("SELECT id FROM conversations WHERE session_id = $1 AND is_active", [s.id]);
     await getPool().query(
       `INSERT INTO inquiries (session_id, conversation_id, submission_id, question, outcome, updated_at) VALUES ($1, $2, $3, $4, 'pending', now())`,
       [s.id, conv.rows[0].id, submissionId, I01]);

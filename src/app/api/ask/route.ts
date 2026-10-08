@@ -26,14 +26,16 @@ export async function POST(req: NextRequest) {
   } catch {
     return NextResponse.json({ error: "invalid json" }, { status: 400 });
   }
-  const { submissionId, question } = (body ?? {}) as { submissionId?: unknown; question?: unknown };
+  const { submissionId, question, conversationId } = (body ?? {}) as { submissionId?: unknown; question?: unknown; conversationId?: unknown };
   if (!validateSubmissionId(submissionId)) return NextResponse.json({ error: "invalid submissionId" }, { status: 400 });
+  if (conversationId !== undefined && !validateSubmissionId(conversationId)) return NextResponse.json({ error: "invalid conversationId" }, { status: 400 });
   const v = validateQuestion(question);
   if (!v.ok) return NextResponse.json({ error: v.error }, { status: 400 });
   if (!AI_ANSWERS_ENABLED && !smallTalkReply(v.question)) return NextResponse.json({ status: "disabled" }, { status: 503 });
 
+  try {
   await ensureSession(sessionId);
-  const result = await askFrontDesk(sessionId, { submissionId, question: v.question });
+  const result = await askFrontDesk(sessionId, { conversationId: conversationId as string | undefined, submissionId, question: v.question });
   switch (result.status) {
     case "limited":
       return NextResponse.json({ status: "limited", scope: result.scope, usage: result.usage }, { status: 429 });
@@ -53,5 +55,9 @@ export async function POST(req: NextRequest) {
         request: result.request ? { id: result.request.id, status: result.request.status } : null,
         usage: result.usage,
       });
+  }
+  } catch (error) {
+    if (error instanceof Error && error.message === "conversation_changed") return NextResponse.json({ error: "This chat changed in another tab. Refresh before sending." }, { status: 409 });
+    throw error;
   }
 }

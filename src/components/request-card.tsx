@@ -62,13 +62,13 @@ export function RequestCard({ request, knownPolicy }: { request: StaffRequest; k
           <dd className="mt-1 leading-relaxed text-ink-2">
             {knownPolicy
               ? <><span className="font-medium text-ink">{knownPolicy.title}.</span> {knownPolicy.policyText}</>
-              : <span>{sensitive ? "Not answered from policy. Staff handle this directly." : "No policy attached. Staff decide whether a knowledge update is needed."}</span>}
+              : <span>{sensitive ? "Not answered from policy. Staff handle this directly." : "No policy attached. Staff decide whether a Handbook update is needed."}</span>}
           </dd>
         </div>
         <Step state={closed ? "done" : "active"} last={false} />
         <div className="pb-5">
           <dt className="eyebrow" data-question-label>{questionLabel}</dt>
-          <dd className="mt-1 whitespace-pre-wrap leading-relaxed text-ink">{request.question}</dd>
+          <dd className="mt-1 whitespace-pre-wrap [overflow-wrap:anywhere] leading-relaxed text-ink">{request.question}</dd>
         </div>
         <Step state={closed ? "done" : "todo"} last />
         <div>

@@ -1,11 +1,13 @@
+import { isHandbookCategory, type HandbookCategory } from "./handbook-categories";
 import { getPool } from "./db";
 import { MAX_POLICY_TEXT_CHARS, MAX_POLICY_TITLE_CHARS } from "./limits";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-export type KnowledgeDraft = { title: string; policyText: string; savedAt: Date };
+export type KnowledgeDraft = { category?: HandbookCategory; title: string; policyText: string; savedAt: Date };
 
 export type KnowledgeEntry = {
+  category?: HandbookCategory;
   id: string;
   sessionId: string;
   seedKey: string | null;
@@ -18,6 +20,8 @@ export type KnowledgeEntry = {
 };
 
 type Row = {
+  category: HandbookCategory;
+  draft_category: HandbookCategory | null;
   id: string;
   session_id: string;
   seed_key: string | null;
@@ -29,15 +33,16 @@ type Row = {
   draft_saved_at: Date | null;
 };
 
-const COLUMNS = "id, session_id, seed_key, title, policy_text, published_at, draft_title, draft_policy_text, draft_saved_at";
+const COLUMNS = "id, session_id, seed_key, title, policy_text, published_at, draft_title, draft_policy_text, draft_saved_at, category, draft_category";
 
 function toEntry(r: Row): KnowledgeEntry {
   const draft =
     r.draft_title !== null && r.draft_policy_text !== null && r.draft_saved_at !== null
-      ? { title: r.draft_title, policyText: r.draft_policy_text, savedAt: r.draft_saved_at }
+      ? { category: r.draft_category ?? r.category, title: r.draft_title, policyText: r.draft_policy_text, savedAt: r.draft_saved_at }
       : null;
   return {
     id: r.id,
+    category: r.category,
     sessionId: r.session_id,
     seedKey: r.seed_key,
     title: r.title,
@@ -99,16 +104,17 @@ export async function listRequestKnowledge(sessionId: string): Promise<Map<strin
 
 // ---- Issue 006: create, edit, publish. Nothing here touches other sessions. ----
 
-export type KnowledgeInput = { title: string; policyText: string };
-export type KnowledgeWriteError = "invalid_title" | "invalid_text" | "not_found" | "nothing_to_publish";
+export type KnowledgeInput = { category?: HandbookCategory; title: string; policyText: string };
+export type KnowledgeWriteError = "invalid_category" | "invalid_title" | "invalid_text" | "not_found" | "nothing_to_publish";
 export type KnowledgeWriteResult = { ok: true; entry: KnowledgeEntry } | { ok: false; error: KnowledgeWriteError };
 
-export function validateKnowledgeInput(input: { title?: unknown; policyText?: unknown }): { ok: true; value: KnowledgeInput } | { ok: false; error: KnowledgeWriteError } {
+export function validateKnowledgeInput(input: { title?: unknown; policyText?: unknown; category?: unknown }): { ok: true; value: KnowledgeInput } | { ok: false; error: KnowledgeWriteError } {
+  if (input.category !== undefined && !isHandbookCategory(input.category)) return { ok: false, error: "invalid_category" };
   const title = typeof input.title === "string" ? input.title.trim() : "";
   const policyText = typeof input.policyText === "string" ? input.policyText.trim() : "";
   if (!title || title.length > MAX_POLICY_TITLE_CHARS) return { ok: false, error: "invalid_title" };
   if (!policyText || policyText.length > MAX_POLICY_TEXT_CHARS) return { ok: false, error: "invalid_text" };
-  return { ok: true, value: { title, policyText } };
+  return { ok: true, value: { title, policyText, ...(input.category !== undefined ? { category: input.category } : {}) } };
 }
 
 /** New entry, saved as a draft: not published, not grounding material, visible only in the operator editor. */
@@ -116,10 +122,10 @@ export async function createKnowledgeDraft(sessionId: string, input: KnowledgeIn
   const v = validateKnowledgeInput(input);
   if (!v.ok) return v;
   const res = await getPool().query<Row>(
-    `INSERT INTO knowledge_entries (session_id, title, policy_text, published_at, draft_title, draft_policy_text, draft_saved_at, sort_order)
-     VALUES ($1, $2, $3, NULL, $2, $3, now(), COALESCE((SELECT max(sort_order) + 1 FROM knowledge_entries WHERE session_id = $1), 0))
+    `INSERT INTO knowledge_entries (session_id, title, policy_text, published_at, draft_title, draft_policy_text, draft_saved_at, category, draft_category, sort_order)
+     VALUES ($1, $2, $3, NULL, $2, $3, now(), COALESCE($4, 'Other'), COALESCE($4, 'Other'), COALESCE((SELECT max(sort_order) + 1 FROM knowledge_entries WHERE session_id = $1), 0))
      RETURNING ${COLUMNS}`,
-    [sessionId, v.value.title, v.value.policyText],
+    [sessionId, v.value.title, v.value.policyText, v.value.category ?? null],
   );
   return { ok: true, entry: toEntry(res.rows[0]) };
 }
@@ -132,11 +138,13 @@ export async function saveKnowledgeDraft(sessionId: string, entryId: string, inp
   const res = await getPool().query<Row>(
     `UPDATE knowledge_entries
      SET draft_title = $3, draft_policy_text = $4, draft_saved_at = now(),
+         draft_category = COALESCE($5, draft_category, category),
+         category = CASE WHEN published_at IS NULL THEN COALESCE($5, draft_category, category) ELSE category END,
          title = CASE WHEN published_at IS NULL THEN $3 ELSE title END,
          policy_text = CASE WHEN published_at IS NULL THEN $4 ELSE policy_text END
      WHERE id = $1::uuid AND session_id = $2
      RETURNING ${COLUMNS}`,
-    [entryId, sessionId, v.value.title, v.value.policyText],
+    [entryId, sessionId, v.value.title, v.value.policyText, v.value.category ?? null],
   );
   return res.rows[0] ? { ok: true, entry: toEntry(res.rows[0]) } : { ok: false, error: "not_found" };
 }
@@ -155,18 +163,18 @@ export async function publishKnowledge(sessionId: string, entryId: string, revie
     if (!v.ok) return v;
     const one = await getPool().query<Row>(
       `UPDATE knowledge_entries
-       SET title = $3, policy_text = $4, published_at = now(),
-           draft_title = NULL, draft_policy_text = NULL, draft_saved_at = NULL
+       SET title = $3, policy_text = $4, category = COALESCE($5, draft_category, category), published_at = now(),
+           draft_title = NULL, draft_policy_text = NULL, draft_saved_at = NULL, draft_category = NULL
        WHERE id = $1::uuid AND session_id = $2
        RETURNING ${COLUMNS}`,
-      [entryId, sessionId, v.value.title, v.value.policyText],
+      [entryId, sessionId, v.value.title, v.value.policyText, v.value.category ?? null],
     );
     return one.rows[0] ? { ok: true, entry: toEntry(one.rows[0]) } : { ok: false, error: "not_found" };
   }
   const res = await getPool().query<Row>(
     `UPDATE knowledge_entries
-     SET title = draft_title, policy_text = draft_policy_text, published_at = now(),
-         draft_title = NULL, draft_policy_text = NULL, draft_saved_at = NULL
+     SET title = draft_title, policy_text = draft_policy_text, category = COALESCE(draft_category, category), published_at = now(),
+         draft_title = NULL, draft_policy_text = NULL, draft_saved_at = NULL, draft_category = NULL
      WHERE id = $1::uuid AND session_id = $2 AND draft_title IS NOT NULL AND draft_policy_text IS NOT NULL
      RETURNING ${COLUMNS}`,
     [entryId, sessionId],

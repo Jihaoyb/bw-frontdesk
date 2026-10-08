@@ -1,7 +1,10 @@
 "use client";
 
+import { ConversationDeliveryProvider, useConversationBusy } from "./conversation-delivery";
+import { GrowingTextarea } from "./growing-textarea";
 import { useRouter } from "next/navigation";
-import { useRef, useState, useTransition, type ReactNode } from "react";
+import { useRef, useState, useTransition, type ReactNode, type ComponentProps } from "react";
+import { startOverAction } from "@/app/actions";
 import { smallTalkReply } from "@/lib/small-talk";
 import { MessageBubble } from "./message-bubble";
 import { HandoffOffer } from "./handoff-offer";
@@ -24,8 +27,15 @@ type Mode = "ask" | "staff";
 // One composer, two destinations, each named on its button. "Ask AI" asks the assistant (counted
 // against the allowance). "Ask staff" saves a staff request directly and is
 // never counted. Delivery state is about the save, not about staff progress.
-export function Composer({ maxChars, usage, aiEnabled, savedMessageIds, children, footer }: { maxChars: number; usage: UsageSnapshot; aiEnabled: boolean; savedMessageIds: string[]; children: ReactNode; footer: ReactNode }) {
+export function Composer(props: ComponentProps<typeof ComposerContent>) {
+  return <ConversationDeliveryProvider><ComposerContent {...props} /></ConversationDeliveryProvider>;
+}
+
+function ComposerContent({ maxChars, usage, aiEnabled, savedMessageIds, conversationId, children, footer }: { conversationId: string; maxChars: number; usage: UsageSnapshot; aiEnabled: boolean; savedMessageIds: string[]; children: ReactNode; footer: ReactNode }) {
   const router = useRouter();
+  const conversationBusy = useConversationBusy();
+  const [restarting, setRestarting] = useState(false);
+  const restartLock = useRef(false);
   const [received, setReceived] = useState<ReceivedTurn[]>([]);
   const [latestUsage, setLatestUsage] = useState(usage);
   const displayedUsage = latestUsage.sessionUsed > usage.sessionUsed ? latestUsage : usage;
@@ -46,7 +56,7 @@ export function Composer({ maxChars, usage, aiEnabled, savedMessageIds, children
   const exhausted = displayedUsage.sessionUsed >= displayedUsage.sessionLimit || displayedUsage.dailyUsed >= displayedUsage.dailyLimit;
   const aiAvailable = aiEnabled && !exhausted;
   const canAsk = aiAvailable || smallTalkReply(text) !== null;
-  const busy = delivery.kind === "saving";
+  const busy = delivery.kind === "saving" || restarting;
   // While a save is unconfirmed the text is locked to the submission id that
   // may already be saved: Retry replays it; Edit instead starts a new one.
   const unconfirmed = delivery.kind === "unconfirmed";
@@ -66,10 +76,10 @@ export function Composer({ maxChars, usage, aiEnabled, savedMessageIds, children
     try {
       const res = await fetch(mode === "ask" ? "/api/ask" : "/api/requests", {
         method: "POST", headers: { "content-type": "application/json" }, signal: ctrl.signal,
-        body: JSON.stringify({ submissionId: id, question: trimmed }),
+        body: JSON.stringify({ conversationId, submissionId: id, question: trimmed }),
       });
       const data = await res.json().catch(() => ({}));
-      if (res.status === 400) {
+      if (res.status === 400 || res.status === 409) {
         const reason = typeof data?.error === "string" ? data.error : data?.error?.reason ?? "not accepted";
         setPending(null);
         return setDelivery({ kind: "rejected", reason: `Not saved: ${reason}.` });
@@ -83,6 +93,7 @@ export function Composer({ maxChars, usage, aiEnabled, savedMessageIds, children
         setPending(null);
         return setDelivery({ kind: "idle" });
       }
+      if (res.status === 202) { setDelivery({ kind: "unconfirmed" }); return; }
       if (res.ok) {
         if (data.usage) setLatestUsage(data.usage);
         if (mode === "ask" && data.message && data.questionMessageId) {
@@ -117,10 +128,37 @@ export function Composer({ maxChars, usage, aiEnabled, savedMessageIds, children
     startRefresh(() => router.refresh()); // the optimistic turn stays until this settles
   }
 
+  async function restart() {
+    if (busy || conversationBusy || unconfirmed || refreshing || restartLock.current) return;
+    const hasDraft = text.trim() || Array.from(ref.current?.closest('main')?.querySelectorAll('textarea') ?? []).some((field) => field.value.trim());
+    if (hasDraft && !window.confirm("Discard unsent messages and start a new chat?")) return;
+    restartLock.current = true;
+    setRestarting(true);
+    try {
+      const result = await startOverAction(conversationId);
+      if (!result.ok) setNotice(result.error ?? "Could not start over. Retry.");
+      else { setText(""); setReceived([]); setPending(null); startRefresh(() => router.refresh()); }
+    } catch { setNotice("Restart not confirmed. Retry safely; previous conversations remain saved."); }
+    finally { restartLock.current = false; setRestarting(false); }
+  }
+
   return (
     <>
+      {savedMessageIds.length > 0 && <div className="flex flex-wrap items-center justify-between gap-2 pt-4">
+        <p className="max-w-sm text-xs text-ink-3">Start over begins a new chat. Staff can still see previous conversations.</p>
+        <button type="button" className="btn-ghost" onClick={restart} disabled={busy || conversationBusy || unconfirmed || refreshing}>{restarting ? 'Starting…' : 'Start over'}</button>
+      </div>}
       <section aria-labelledby="conversation" className="flex-1 space-y-6 py-5">
         {children}
+        {!savedMessageIds.length && !received.length && !pending && <section aria-label="Suggested questions" className="space-y-3">
+          <h3 className="eyebrow">Suggested questions</h3>
+          <ul className="flex flex-col items-start gap-2">{suggestions.map((question) => <li key={question} className="max-w-full">
+            <button type="button" className="card min-h-12 px-4 py-3 text-left text-sm text-ink-2 hover:border-brand focus-visible:ring-2 focus-visible:ring-brand" onClick={() => {
+              if (text.trim() && text !== question && !window.confirm("Replace your unsent message with this suggested question?")) return;
+              setText(question); ref.current?.focus();
+            }}>{question}</button>
+          </li>)}</ul>
+        </section>}
         <div className="space-y-6" aria-live="polite">
           {received.filter((t) => !savedIds.has(t.answer.message.id)).map((t) => (
             <ReceivedAnswer key={t.submissionId} turn={t} showQuestion={!savedIds.has(t.answer.questionMessageId)} />
@@ -139,7 +177,7 @@ export function Composer({ maxChars, usage, aiEnabled, savedMessageIds, children
         <form onSubmit={(e) => { e.preventDefault(); void send(canAsk ? "ask" : "staff"); }} aria-labelledby="ask"
           className="flex items-end gap-2 rounded-[26px] border border-line bg-surface py-1.5 pl-4 pr-1.5 shadow-float transition focus-within:border-brand focus-within:ring-2 focus-within:ring-brand/30">
           <label htmlFor="question" id="ask" className="sr-only">Ask the AI assistant or send a message to school staff</label>
-          <textarea
+          <GrowingTextarea
             id="question" ref={ref} name="question" value={text} rows={1} disabled={busy || unconfirmed} maxLength={maxChars * 2} data-shortcut-focus
             onChange={(e) => setText(e.target.value)}
             onKeyDown={(e) => { if (shouldSendOnEnter(keyFacts(e))) { e.preventDefault(); void send(canAsk ? "ask" : "staff"); } }}
@@ -213,3 +251,11 @@ function ReceivedAnswer({ turn: { submissionId, question, answer }, showQuestion
     {answer.request && <p className="text-sm text-ink-2">Saved for school staff. Staff read messages during office hours.</p>}
   </div>;
 }
+
+const suggestions = [
+  "Are you open on Veterans Day?",
+  "What is the tuition for infants?",
+  "My child has a fever. Can they come in?",
+  "I forgot to pack lunch. Can you provide lunch today, and what is on the menu?",
+  "How can I schedule a tour?",
+];
