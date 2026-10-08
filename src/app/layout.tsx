@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
+import { KeyboardShortcuts } from "@/components/keyboard-shortcuts";
 import { centerConfig } from "@/lib/center-config";
 
 export const metadata: Metadata = {
@@ -16,7 +17,10 @@ export const viewport: Viewport = { width: "device-width", initialScale: 1 };
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" className={`h-full antialiased ${geist.variable} ${geistMono.variable}`}>
-      <body className="min-h-full flex flex-col">{children}</body>
+      <body className="min-h-full flex flex-col">
+        <KeyboardShortcuts />
+        {children}
+      </body>
     </html>
   );
 }

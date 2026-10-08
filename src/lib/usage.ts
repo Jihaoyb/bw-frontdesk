@@ -15,53 +15,38 @@ type Options = { sessionLimit?: number; dailyLimit?: number; day?: string };
 
 /**
  * Reserve one AI request for this session and for today, atomically.
- * Both increments happen in one transaction under row locks, so concurrent
- * calls serialize and exactly `limit` of them succeed. Called before any
- * model dispatch; a rejected call consumes nothing.
+ * One statement (issue 015, was a four-step transaction): the session row is
+ * locked and checked first, the day counter increments only when that check
+ * passed, and the session increments only when the day counter did. Both
+ * writes commit together or not at all, so concurrent calls serialize on the
+ * row lock and exactly `limit` of them succeed. Called before any model
+ * dispatch; a rejected call consumes nothing.
  */
 export async function consumeAllowance(sessionId: string, opts: Options = {}): Promise<ConsumeResult> {
   const sessionLimit = opts.sessionLimit ?? AI_SESSION_LIMIT;
   const dailyLimit = opts.dailyLimit ?? AI_DAILY_LIMIT;
   const day = opts.day ?? utcDay();
-  // Reserve under one connection, release it, then read usage for a rejection
-  // on a fresh connection so a burst of callers cannot exhaust the pool.
-  const reserved = await reserve(sessionId, sessionLimit, dailyLimit, day);
-  if (reserved.ok) return reserved;
-  return { ok: false, scope: reserved.scope, usage: await readUsage(sessionId, { sessionLimit, dailyLimit, day }) };
-}
-
-async function reserve(sessionId: string, sessionLimit: number, dailyLimit: number, day: string):
-  Promise<{ ok: true; usage: UsageSnapshot } | { ok: false; scope: "session" | "daily" }> {
-  const client = await getPool().connect();
-  try {
-    await client.query("BEGIN");
-    const s = await client.query<{ ai_requests_used: number }>(
-      `UPDATE demo_sessions SET ai_requests_used = ai_requests_used + 1
-       WHERE id = $1 AND ai_requests_used < $2 RETURNING ai_requests_used`,
-      [sessionId, sessionLimit],
-    );
-    if (!s.rowCount) {
-      await client.query("ROLLBACK");
-      return { ok: false, scope: "session" };
-    }
-    const d = await client.query<{ used: number }>(
-      `INSERT INTO usage_daily (day, used) VALUES ($1::date, 1)
-       ON CONFLICT (day) DO UPDATE SET used = usage_daily.used + 1 WHERE usage_daily.used < $2
-       RETURNING used`,
-      [day, dailyLimit],
-    );
-    if (!d.rowCount) {
-      await client.query("ROLLBACK"); // session increment undone too
-      return { ok: false, scope: "daily" };
-    }
-    await client.query("COMMIT");
-    return { ok: true, usage: { sessionUsed: s.rows[0].ai_requests_used, sessionLimit, dailyUsed: d.rows[0].used, dailyLimit } };
-  } catch (err) {
-    await client.query("ROLLBACK").catch(() => undefined);
-    throw err;
-  } finally {
-    client.release();
+  const res = await getPool().query<{ session_used: number | null; daily_used: number | null; session_open: boolean }>(
+    `WITH s_open AS (
+       SELECT id FROM demo_sessions WHERE id = $1 AND ai_requests_used < $2 FOR UPDATE
+     ), d AS (
+       INSERT INTO usage_daily (day, used) SELECT $3::date, 1 WHERE EXISTS (SELECT 1 FROM s_open)
+       ON CONFLICT (day) DO UPDATE SET used = usage_daily.used + 1 WHERE usage_daily.used < $4
+       RETURNING used
+     ), s AS (
+       UPDATE demo_sessions SET ai_requests_used = ai_requests_used + 1
+       WHERE id = $1 AND EXISTS (SELECT 1 FROM d) RETURNING ai_requests_used
+     )
+     SELECT (SELECT ai_requests_used FROM s) AS session_used, (SELECT used FROM d) AS daily_used,
+            EXISTS (SELECT 1 FROM s_open) AS session_open`,
+    [sessionId, sessionLimit, day, dailyLimit],
+  );
+  const row = res.rows[0];
+  if (row.session_used != null && row.daily_used != null) {
+    return { ok: true, usage: { sessionUsed: row.session_used, sessionLimit, dailyUsed: row.daily_used, dailyLimit } };
   }
+  const scope = row.session_open ? "daily" : "session";
+  return { ok: false, scope, usage: await readUsage(sessionId, { sessionLimit, dailyLimit, day }) };
 }
 
 export async function readUsage(sessionId: string, opts: Options = {}): Promise<UsageSnapshot> {

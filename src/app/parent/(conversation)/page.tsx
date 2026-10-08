@@ -5,10 +5,9 @@ import { Composer } from "@/components/composer";
 import { HandoffOffer } from "@/components/handoff-offer";
 import { MessageBubble } from "@/components/message-bubble";
 import { ParentReplyForm } from "@/components/parent-reply-form";
-import { PerspectiveNav } from "@/components/perspective-nav";
 import { RequestCard, statusLabel } from "@/components/request-card";
 import { listEvidence, listInquiries } from "@/lib/inquiries";
-import { getKnowledgeEntries } from "@/lib/knowledge";
+import { listRequestKnowledge } from "@/lib/knowledge";
 import { AI_ANSWERS_ENABLED, MAX_QUESTION_CHARS } from "@/lib/limits";
 import { listMessages, listRequests } from "@/lib/requests";
 import { getActiveSession } from "@/lib/request-session";
@@ -18,8 +17,9 @@ export const dynamic = "force-dynamic";
 
 export default async function ParentPage() {
   const session = await getActiveSession();
-  const [messages, requests, inquiries, evidence, usage] = await Promise.all([
-    listMessages(session.id), listRequests(session.id), listInquiries(session.id), listEvidence(session.id), readUsage(session.id),
+  // One parallel batch (issue 015): nothing here waits on another page query.
+  const [messages, requests, inquiries, evidence, usage, policyEntries] = await Promise.all([
+    listMessages(session.id), listRequests(session.id), listInquiries(session.id), listEvidence(session.id), readUsage(session.id), listRequestKnowledge(session.id),
   ]);
   // A request card sits under the assistant's answer when there is one (the
   // handoff the parent accepted), else under the question itself.
@@ -33,7 +33,6 @@ export default async function ParentPage() {
   // Open offers: the front desk could not settle it and no request exists yet.
   const offerByAnswer = new Map(
     inquiries.filter((i) => (i.outcome === "handoff_offered" || i.outcome === "sensitive") && i.answerMessageId && !i.requestId).map((i) => [i.answerMessageId as string, i]));
-  const policyEntries = await getKnowledgeEntries(session.id, requests.map((r) => r.knownPolicyEntryId)); // one query, not one per request
   const knownPolicies = new Map(requests.map((r) => [r.id, r.knownPolicyEntryId ? policyEntries.get(r.knownPolicyEntryId) ?? null : null] as const));
   // Follow-ups (parent details, staff replies) render under their request card,
   // so the exchange reads alongside the original question after a refresh.
@@ -44,7 +43,6 @@ export default async function ParentPage() {
 
   return (
     <>
-      <PerspectiveNav active="parent" current="/parent" />
       {/* Issue 014: phone = one column; ≥1024px = conversation column plus a sticky rail (contact, your requests, session note). */}
       <div className="mx-auto flex w-full max-w-7xl flex-1 gap-10 px-4 lg:px-8">
         <main className="flex w-full min-w-0 max-w-[680px] flex-1 flex-col">

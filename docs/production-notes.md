@@ -55,3 +55,10 @@ Real deployment: owner assignment, needs-action and unread filters, last-activit
 Today: the parent view opens on the conversation; policies are a tab; one composer with named destinations ("Ask AI" / "Send to school staff"); each request has its own reply box.
 Why: the PRD's demo starts from a question.
 Real deployment: a help landing page (hours, contact, handbook, common questions tied to published policies) with "Ask a question" beneath; one active conversation or request at a time with one clearly labeled composer; "Ask about this policy" entry points from the policy browser.
+
+## Response speed
+
+Today: a page is one session check plus one parallel batch of queries behind a per-route loading frame; the client router keeps a dynamic page for 30 s and every save invalidates it; an ask is 4 database round trips around one model call at low reasoning effort (1.5–2.5 s locally, was 2.5–4.5 s at the default).
+Why: the model call is the cost; everything else is kept out of its way, and the screen moves before any response.
+Real deployment: stream the answer tokens into the pending turn and persist the validated result when the stream ends (the schema check stays; the parent sees words sooner, not an unchecked answer); put the app and the database in one region; keep a warm connection pool outside the request path (a pooler or a long-lived server) so cold invocations do not pay for TLS handshakes; cache the published-knowledge prompt per session until the next publish.
+

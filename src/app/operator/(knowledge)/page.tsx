@@ -1,6 +1,5 @@
 import { CenterInfo } from "@/components/center-info";
 import { KnowledgeEditor } from "@/components/knowledge-editor";
-import { PerspectiveNav } from "@/components/perspective-nav";
 import { ResetDemo } from "@/components/reset-demo";
 import { listAllKnowledge } from "@/lib/knowledge";
 import { getActiveSession } from "@/lib/request-session";
@@ -24,7 +23,6 @@ export default async function OperatorPage({
         : null;
   return (
     <>
-      <PerspectiveNav active="operator" current="/operator" />
       <main className="mx-auto w-full max-w-7xl flex-1 space-y-8 px-4 py-5 lg:px-8">
         <KnowledgeEditor entries={entries} notice={notice} />
         <div className="grid gap-4 lg:grid-cols-[300px_minmax(0,1fr)] lg:gap-10">

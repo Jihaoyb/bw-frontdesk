@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { parentReplyAction } from "@/app/actions";
+import { keyFacts, shouldSendOnEnter } from "@/lib/compose-keys";
 import { deliver, DeliveryStatus, type Delivery } from "./delivery-status";
 
 // Parent adds details under a request. If the request was closed, the server
@@ -14,8 +15,8 @@ export function ParentReplyForm({ requestId, maxChars, closed }: { requestId: st
   const [submissionId, setSubmissionId] = useState<string | null>(null); // stable across retries → one message
   const busy = delivery.kind === "saving";
 
-  async function submit(e: React.FormEvent) {
-    e.preventDefault();
+  async function submit(e?: React.FormEvent) {
+    e?.preventDefault();
     const trimmed = body.trim();
     if (!trimmed) return setDelivery({ kind: "rejected", reason: "Type a message first." });
     if (trimmed.length > maxChars) return setDelivery({ kind: "rejected", reason: `Keep it under ${maxChars} characters.` });
@@ -33,6 +34,7 @@ export function ParentReplyForm({ requestId, maxChars, closed }: { requestId: st
       <textarea
         id={`reply-${requestId}`} value={body} onChange={(e) => setBody(e.target.value)} rows={2} disabled={busy}
         maxLength={maxChars * 2} placeholder="Add details or a follow-up question"
+        onKeyDown={(e) => { if (shouldSendOnEnter(keyFacts(e))) { e.preventDefault(); void submit(); } }}
         className="field mt-1 rounded-2xl border-0 bg-canvas focus:ring-0"
       />
       <div className="mt-2 flex items-center gap-3">

@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { markReviewingAction, openKnowledgeDraftAction, reopenRequestAction, staffReplyAction } from "@/app/actions";
+import { keyFacts, shouldSendOnEnter } from "@/lib/compose-keys";
 import type { RequestStatus, StaffReplyOutcome } from "@/lib/requests";
 import { deliver, DeliveryStatus, type Delivery } from "./delivery-status";
 
@@ -90,8 +91,9 @@ export function StaffReplyPanel({ requestId, status, staffNames, maxChars, canDr
         <label className="flex flex-col gap-1">
           <span className="eyebrow">Message</span>
           <textarea id="staff-body" value={body} onChange={(e) => setBody(e.target.value)} rows={3} disabled={busy} maxLength={maxChars * 2}
-            placeholder="Write to this family" className="field" />
-          <span className="mono text-[11px] text-ink-3">{body.trim().length}/{maxChars} · goes to this family only; it does not change center policies</span>
+            onKeyDown={(e) => { if (shouldSendOnEnter(keyFacts(e))) { e.preventDefault(); void send(outcome); } }}
+            placeholder="Write to this family" className="field" data-shortcut-focus />
+          <span className="mono text-[11px] text-ink-3">{body.trim().length}/{maxChars} · goes to this family only; it does not change center policies<span className="hidden sm:inline" data-key-hint> · Enter sends, Shift+Enter new line</span></span>
         </label>
       </div>
       <fieldset className="flex flex-col gap-2">

@@ -101,7 +101,7 @@ export function Composer({ maxChars, usage, aiEnabled }: { maxChars: number; usa
         className="flex items-end gap-2 rounded-[26px] border border-line bg-surface py-1.5 pl-4 pr-1.5 shadow-float transition focus-within:border-brand focus-within:ring-2 focus-within:ring-brand/30">
         <label htmlFor="question" id="ask" className="sr-only">Ask the AI assistant or send a message to school staff</label>
         <textarea
-          id="question" ref={ref} name="question" value={text} rows={1} disabled={busy || unconfirmed} maxLength={maxChars * 2}
+          id="question" ref={ref} name="question" value={text} rows={1} disabled={busy || unconfirmed} maxLength={maxChars * 2} data-shortcut-focus
           onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => { if (shouldSendOnEnter(keyFacts(e))) { e.preventDefault(); void send(aiAvailable ? "ask" : "staff"); } }}
           placeholder={aiAvailable ? "Ask about hours, illness, meals…" : "Write a message for school staff"}
@@ -122,7 +122,7 @@ export function Composer({ maxChars, usage, aiEnabled }: { maxChars: number; usa
       <div className="mt-1.5 flex items-center justify-between gap-3 px-3 text-xs text-ink-3">
         <span>
           <span aria-label="AI answers used this session" title="Routine questions are answered by AI, up to a per-demo allowance.">AI answers · {Math.min(usage.sessionUsed, usage.sessionLimit)} of {usage.sessionLimit} used</span>
-          <span className="hidden sm:inline"> · {text.trim().length}/{maxChars} · Enter sends, Shift+Enter for a new line</span>
+          <span className="hidden sm:inline"> · {text.trim().length}/{maxChars} · <span data-key-hint>Enter sends · Shift+Enter new line · Esc leaves · / focuses</span></span>
         </span>
         {aiAvailable && !unconfirmed && (
           <button type="button" onClick={() => send("staff")} disabled={busy} className="btn-link min-h-9 font-medium text-ink">Message staff instead</button>

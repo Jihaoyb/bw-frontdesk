@@ -65,6 +65,11 @@ export const openAiCaller: ModelCaller = async ({ system, turns, question, signa
   const apiKey = process.env.OPENAI_API_KEY;
   const model = process.env.OPENAI_MODEL;
   if (!apiKey || !model) throw new Error("model not configured");
+  // Issue 015: the answer is a short classification over a few pages of policy, so
+  // the model runs at low reasoning effort and low verbosity by default. Both are
+  // configuration; an empty value sends nothing and leaves the model's default.
+  const effort = process.env.OPENAI_REASONING_EFFORT ?? "low";
+  const verbosity = process.env.OPENAI_VERBOSITY ?? "low";
   const res = await fetch("https://api.openai.com/v1/responses", {
     method: "POST",
     headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
@@ -72,12 +77,13 @@ export const openAiCaller: ModelCaller = async ({ system, turns, question, signa
     body: JSON.stringify({
       model,
       max_output_tokens: MAX_ANSWER_TOKENS,
+      ...(effort ? { reasoning: { effort } } : {}),
       input: [
         { role: "system", content: system },
         ...turns.map((t) => ({ role: t.speaker === "parent" ? "user" : "assistant", content: t.body })),
         { role: "user", content: question },
       ],
-      text: { format: { type: "json_schema", name: "front_desk_result", strict: true, schema: RESULT_SCHEMA } },
+      text: { ...(verbosity ? { verbosity } : {}), format: { type: "json_schema", name: "front_desk_result", strict: true, schema: RESULT_SCHEMA } },
     }),
   });
   if (!res.ok) throw new Error(`model http ${res.status}`);
@@ -131,6 +137,8 @@ export async function answerQuestion(input: { question: string; knowledge: Knowl
   } catch (err) {
     if (ctrl.signal.aborted) return { kind: "failure", reason: "timeout" };
     if (err instanceof SyntaxError) return { kind: "failure", reason: "invalid_shape" };
+    // The status or message only; never the request body or credentials.
+    if (process.env.NODE_ENV !== "test") console.warn("[front-desk] model call failed:", err instanceof Error ? err.message : String(err));
     return { kind: "failure", reason: "model_error" };
   } finally {
     clearTimeout(timer);

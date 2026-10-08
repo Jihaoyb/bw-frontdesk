@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { centerConfig } from "@/lib/center-config";
+import { SectionTabs } from "./section-tabs";
 
 export type Perspective = "parent" | "operator";
 
@@ -16,6 +17,8 @@ const subnav: Record<Perspective, { href: string; label: string }[]> = {
 
 // Issue 014: one quiet bar. Center name, section tabs, and the reviewer switch
 // as a small segmented control on the right. Desktop widens; nothing stacks.
+// Issue 015: rendered once per perspective from the route layout, so it stays
+// put while pages load; `current` is only for static rendering outside the router.
 export function PerspectiveNav({ active, current }: { active: Perspective; current?: string }) {
   const tab = (p: Perspective, label: string) => (
     <Link
@@ -40,21 +43,7 @@ export function PerspectiveNav({ active, current }: { active: Perspective; curre
           {tab("parent", "Parent")}
           {tab("operator", "Staff")}
         </nav>
-        <nav aria-label="Section" className="flex basis-full gap-1 sm:ml-4 sm:basis-auto">
-          {subnav[active].map((s) => (
-            <Link
-              key={s.href}
-              href={s.href}
-              aria-current={current === s.href ? "page" : undefined}
-              className={
-                "flex min-h-9 items-center rounded-full px-3 text-[13px] font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand " +
-                (current === s.href ? "bg-surface text-ink ring-1 ring-line" : "text-ink-3 hover:text-ink")
-              }
-            >
-              {s.label}
-            </Link>
-          ))}
-        </nav>
+        <SectionTabs items={subnav[active]} current={current} />
       </div>
       <p className="sr-only">Switching perspective is a demo convenience for reviewers, not a login. Both views show the same demo session.</p>
     </header>

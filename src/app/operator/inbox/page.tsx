@@ -2,10 +2,9 @@ import Link from "next/link";
 import { InboxList, parseFilter } from "@/components/inbox-list";
 import { messageTime } from "@/components/message-bubble";
 import { OutcomePill } from "@/components/outcome-pill";
-import { PerspectiveNav } from "@/components/perspective-nav";
 import { listInquiries } from "@/lib/inquiries";
-import { getKnowledgeEntries } from "@/lib/knowledge";
-import { draftEntriesForRequests } from "@/lib/knowledge-loop";
+import { listRequestKnowledge } from "@/lib/knowledge";
+import { draftEntriesFrom } from "@/lib/knowledge-loop";
 import { matchCount, matchingCounts } from "@/lib/matching";
 import { listRequests } from "@/lib/requests";
 import { getActiveSession } from "@/lib/request-session";
@@ -17,17 +16,14 @@ export default async function InboxPage({ searchParams }: { searchParams: Promis
   const { filter: rawFilter } = await searchParams;
   const filter = parseFilter(rawFilter);
   const session = await getActiveSession();
-  const [requests, inquiries] = await Promise.all([listRequests(session.id), listInquiries(session.id)]);
-  const [drafts, policies] = await Promise.all([
-    draftEntriesForRequests(session.id, requests),
-    getKnowledgeEntries(session.id, requests.map((r) => r.knownPolicyEntryId)),
-  ]);
+  // One parallel batch (issue 015): the known policies and drafts come from one query that needs no request list first.
+  const [requests, inquiries, policies] = await Promise.all([listRequests(session.id), listInquiries(session.id), listRequestKnowledge(session.id)]);
+  const drafts = draftEntriesFrom(requests, policies);
   const counts = matchingCounts(inquiries); // this session only; resets with its content
   // Match count per request: the count of its own question text in the history.
   const requestCounts = new Map(requests.map((r) => [r.id, matchCount(counts, r)]));
   return (
     <>
-      <PerspectiveNav active="operator" current="/operator/inbox" />
       <div className="mx-auto grid w-full max-w-7xl flex-1 gap-10 px-4 py-5 lg:grid-cols-[400px_minmax(0,1fr)] lg:px-8">
         <InboxList requests={requests} drafts={drafts} policies={policies} counts={requestCounts} filter={filter} />
 

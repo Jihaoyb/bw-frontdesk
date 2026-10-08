@@ -13,4 +13,6 @@ npm run dev
 
 `npm test` runs Vitest against `DATABASE_URL` (uses `.env.test.local` first if present). `npm run lint && npm run typecheck` before commit.
 
+Optional model tuning: `OPENAI_REASONING_EFFORT` and `OPENAI_VERBOSITY` (both default `low`; set either to an empty string to send nothing and keep the model's default).
+
 Each browser gets its own demo session (httpOnly cookie) with seeded policies; the Parent/Operator switch is a reviewer convenience, not authentication.

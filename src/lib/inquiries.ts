@@ -62,6 +62,13 @@ const toMessage = (r: MessageRow): Message => ({
 });
 const MSG_COLS = "id, conversation_id, request_id, speaker, staff_name, body, created_at";
 
+/** A row that came back through to_jsonb: timestamps are ISO strings, so revive the dated columns. */
+function fromJson<T extends Record<string, unknown>>(row: T): T {
+  const out: Record<string, unknown> = { ...row };
+  for (const k of ["created_at", "updated_at", "published_at"]) if (typeof out[k] === "string") out[k] = new Date(out[k] as string);
+  return out as T;
+}
+
 /**
  * Record a staff request on the question history. A direct request (issue 002
  * path) is its own outcome; a request raised after a handoff offer, a sensitive
@@ -136,14 +143,14 @@ export async function askFrontDesk(
   if (inquiry.outcome === "pending" && !inquiry.fresh) return { status: "pending", inquiry };
 
   // 2. Allowance before dispatch. Rejections consume nothing and are not model failures.
-  const allowance = await consumeAllowance(sessionId, input.usageDay ? { day: input.usageDay } : {});
+  const allowancePromise = consumeAllowance(sessionId, input.usageDay ? { day: input.usageDay } : {});
+  // 3. Grounding: published knowledge only (drafts excluded by the query), plus recent parent/front-desk turns.
+  // Read alongside the reservation (issue 015): a rejection wastes two reads, never a model call.
+  const [allowance, knowledge, turns] = await Promise.all([allowancePromise, listPublishedKnowledge(sessionId), recentTurns(sessionId, inquiry.questionMessageId)]);
   if (!allowance.ok) {
     const updated = await setOutcome(sessionId, inquiry.id, "failed", `allowance_${allowance.scope}`);
     return { status: "limited", inquiry: updated, scope: allowance.scope, usage: allowance.usage };
   }
-
-  // 3. Grounding: published knowledge only (drafts excluded by the query), plus recent parent/front-desk turns.
-  const [knowledge, turns] = await Promise.all([listPublishedKnowledge(sessionId), recentTurns(sessionId, inquiry.questionMessageId)]);
   const result = await answerQuestion({ question: v.question, knowledge, turns });
 
   // 4. Persist the outcome with its evidence.
@@ -233,35 +240,37 @@ async function persistResult(sessionId: string, inquiry: Inquiry, result: Answer
 
   const outcome: InquiryOutcome =
     result.kind === "answer" ? "answered" : result.kind === "clarify" ? "clarified" : result.kind === "sensitive" ? "sensitive" : "handoff_offered";
-  const client = await getPool().connect();
-  let saved: { inquiry: Inquiry; message: Message; sources: Evidence[] };
-  try {
-    await client.query("BEGIN");
-    const msg = await client.query<MessageRow>(
-      `INSERT INTO messages (session_id, conversation_id, speaker, body)
-       SELECT $1, conversation_id, 'assistant', $3 FROM inquiries WHERE id = $2 AND session_id = $1 RETURNING ${MSG_COLS}`,
-      [sessionId, inquiry.id, result.text]);
-    let evidence: Evidence[] = [];
-    if (sources.length) {
-      const ev = await client.query<EvidenceRow>(
-        `INSERT INTO answer_evidence (session_id, message_id, entry_id, title, policy_text, published_at, position)
-         SELECT $1, $2, e.entry_id, e.title, e.policy_text, e.published_at, e.position
-         FROM unnest($3::uuid[], $4::text[], $5::text[], $6::timestamptz[], $7::int[]) AS e(entry_id, title, policy_text, published_at, position)
-         ORDER BY e.position RETURNING id, message_id, entry_id, title, policy_text, published_at`,
-        [sessionId, msg.rows[0].id, sources.map((k) => k.id), sources.map((k) => k.title), sources.map((k) => k.policyText), sources.map((k) => k.publishedAt), sources.map((_, i) => i)]);
-      evidence = ev.rows.sort((a, b) => sources.findIndex((k) => k.id === a.entry_id) - sources.findIndex((k) => k.id === b.entry_id)).map(toEvidence);
-    }
-    const upd = await client.query<InquiryRow>(
-      `UPDATE inquiries SET outcome = $3, answer_message_id = $4, failure_reason = NULL, updated_at = now()
-       WHERE id = $1 AND session_id = $2 RETURNING ${COLS}`, [inquiry.id, sessionId, outcome, msg.rows[0].id]);
-    await client.query("COMMIT");
-    saved = { inquiry: toInquiry(upd.rows[0]), message: toMessage(msg.rows[0]), sources: evidence };
-  } catch (err) {
-    await client.query("ROLLBACK").catch(() => undefined);
-    throw err;
-  } finally {
-    client.release();
-  }
+  // One statement (issue 015, was a five-step transaction): the assistant
+  // message, its evidence rows, and the inquiry outcome commit together. The
+  // message id is generated here so the evidence and the inquiry can reference
+  // it inside the same statement. Rows come back as JSON, dated fields as text.
+  const messageId = randomUUID();
+  const persisted = await getPool().query<{ kind: "message" | "evidence" | "inquiry"; row: Record<string, unknown> }>(
+    `WITH m AS (
+       INSERT INTO messages (id, session_id, conversation_id, speaker, body)
+       SELECT $3, $1, conversation_id, 'assistant', $4 FROM inquiries WHERE id = $2 AND session_id = $1 RETURNING ${MSG_COLS}
+     ), ev AS (
+       INSERT INTO answer_evidence (session_id, message_id, entry_id, title, policy_text, published_at, position)
+       SELECT $1, m.id, e.entry_id, e.title, e.policy_text, e.published_at, e.position
+       FROM m, unnest($5::uuid[], $6::text[], $7::text[], $8::timestamptz[], $9::int[]) AS e(entry_id, title, policy_text, published_at, position)
+       RETURNING id, message_id, entry_id, title, policy_text, published_at, position
+     ), u AS (
+       UPDATE inquiries SET outcome = $10, answer_message_id = m.id, failure_reason = NULL, updated_at = now()
+       FROM m WHERE inquiries.id = $2 AND inquiries.session_id = $1 RETURNING ${COLS.replace(/(^|, )/g, "$1inquiries.")}
+     )
+     SELECT 'message' AS kind, to_jsonb(m) AS row FROM m
+     UNION ALL SELECT 'evidence', to_jsonb(ev) FROM ev
+     UNION ALL SELECT 'inquiry', to_jsonb(u) FROM u`,
+    [sessionId, inquiry.id, messageId, result.text,
+      sources.map((k) => k.id), sources.map((k) => k.title), sources.map((k) => k.policyText), sources.map((k) => k.publishedAt), sources.map((_, i) => i),
+      outcome]);
+  const msgRow = persisted.rows.find((r) => r.kind === "message")?.row;
+  const inqRow = persisted.rows.find((r) => r.kind === "inquiry")?.row;
+  if (!msgRow || !inqRow) throw new Error("inquiry vanished while answering"); // the session was reset mid-flight
+  const evidence = persisted.rows.filter((r) => r.kind === "evidence").map((r) => r.row)
+    .sort((a, b) => (a.position as number) - (b.position as number))
+    .map((r) => toEvidence(fromJson(r) as EvidenceRow));
+  const saved = { inquiry: toInquiry(fromJson(inqRow) as InquiryRow), message: toMessage(fromJson(msgRow) as MessageRow), sources: evidence };
 
   // Sensitive + explicit staff intent: hand off directly, flagged sensitive.
   let request: StaffRequest | null = null;

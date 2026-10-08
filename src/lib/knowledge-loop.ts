@@ -68,5 +68,10 @@ export async function openKnowledgeDraftForRequest(sessionId: string, requestId:
 /** Draft entries for a list of requests, keyed by request id. One query, scoped to the session. */
 export async function draftEntriesForRequests(sessionId: string, requests: StaffRequest[]): Promise<Map<string, KnowledgeEntry | null>> {
   const entries = await getKnowledgeEntries(sessionId, requests.map((r) => r.knowledgeDraftEntryId));
+  return draftEntriesFrom(requests, entries);
+}
+
+/** The same keyed by request id, from entries already in hand (issue 015: pages read them in one batch). */
+export function draftEntriesFrom(requests: StaffRequest[], entries: Map<string, KnowledgeEntry>): Map<string, KnowledgeEntry | null> {
   return new Map(requests.map((r) => [r.id, r.knowledgeDraftEntryId ? entries.get(r.knowledgeDraftEntryId) ?? null : null]));
 }

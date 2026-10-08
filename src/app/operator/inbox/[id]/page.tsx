@@ -3,13 +3,12 @@ import { notFound } from "next/navigation";
 import { openKnowledgeDraftFormAction } from "@/app/actions";
 import { InboxList, parseFilter } from "@/components/inbox-list";
 import { MessageBubble, messageTime } from "@/components/message-bubble";
-import { PerspectiveNav } from "@/components/perspective-nav";
 import { formatPublished } from "@/components/policy-list";
 import { originLabel, StatusPill } from "@/components/request-card";
 import { StaffReplyPanel } from "@/components/staff-reply-panel";
 import { listInquiries } from "@/lib/inquiries";
-import { getKnowledgeEntries, type KnowledgeEntry } from "@/lib/knowledge";
-import { draftEntriesForRequests, gapLabel, knowledgeGapState, type KnowledgeGapState } from "@/lib/knowledge-loop";
+import { listRequestKnowledge, type KnowledgeEntry } from "@/lib/knowledge";
+import { draftEntriesFrom, gapLabel, knowledgeGapState, type KnowledgeGapState } from "@/lib/knowledge-loop";
 import { MAX_QUESTION_CHARS } from "@/lib/limits";
 import { matchCount, matchingCounts } from "@/lib/matching";
 import { getRequest, listContextBeforeRequest, listRequestMessages, listRequests, STAFF_NAMES } from "@/lib/requests";
@@ -24,18 +23,18 @@ export default async function RequestPage({ params, searchParams }: { params: Pr
   const { error, filter: rawFilter } = await searchParams;
   const filter = parseFilter(rawFilter);
   const session = await getActiveSession();
-  const request = await getRequest(session.id, id); // scoped: other sessions' ids → null
-  if (!request) notFound();
-  const [requests, inquiries, messages, context] = await Promise.all([
+  // One parallel batch (issue 015). Every query is session-scoped, so an id from
+  // another session yields no request and the page is not found.
+  const [request, requests, inquiries, messages, context, policies] = await Promise.all([
+    getRequest(session.id, id),
     listRequests(session.id),
     listInquiries(session.id),
-    listRequestMessages(session.id, request.id),
-    listContextBeforeRequest(session.id, request.id),
+    listRequestMessages(session.id, id),
+    listContextBeforeRequest(session.id, id),
+    listRequestKnowledge(session.id),
   ]);
-  const [drafts, policies] = await Promise.all([
-    draftEntriesForRequests(session.id, requests),
-    getKnowledgeEntries(session.id, requests.map((r) => r.knownPolicyEntryId)),
-  ]);
+  if (!request) notFound();
+  const drafts = draftEntriesFrom(requests, policies);
   const counts = matchingCounts(inquiries);
   const requestCounts = new Map(requests.map((r) => [r.id, matchCount(counts, r)]));
   const knownPolicy = request.knownPolicyEntryId ? policies.get(request.knownPolicyEntryId) ?? null : null;
@@ -45,7 +44,6 @@ export default async function RequestPage({ params, searchParams }: { params: Pr
 
   return (
     <>
-      <PerspectiveNav active="operator" current="/operator/inbox" />
       <div className="mx-auto grid w-full max-w-7xl flex-1 gap-10 px-4 py-5 lg:grid-cols-[400px_minmax(0,1fr)] lg:px-8">
         <div className="hidden lg:block">
           <div className="sticky top-20">

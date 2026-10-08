@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { createElement } from "react";
 import { RequestCard } from "@/components/request-card";
 import { MessageBubble } from "@/components/message-bubble";
-import { shouldSendOnEnter } from "@/lib/compose-keys";
+import { isFocusShortcut, shouldLeaveOnEscape, shouldSendOnEnter } from "@/lib/compose-keys";
 import type { StaffRequest, Message } from "@/lib/requests";
 
 // Issue 011: copy follows state, the recipient is named, Enter is IME- and touch-safe.
@@ -55,5 +55,25 @@ describe("Enter-to-send rules", () => {
     expect(k({ isComposing: true })).toBe(false); // IME confirming a candidate
     expect(k({ finePointer: false })).toBe(false); // touch: the button sends
     expect(k({ key: "a" })).toBe(false);
+  });
+
+  // Issue 015: desktop keys.
+  it("Cmd/Ctrl+Enter always sends, even on touch or with Shift, never mid-composition", () => {
+    expect(k({ metaKey: true, finePointer: false })).toBe(true);
+    expect(k({ ctrlKey: true, shiftKey: true })).toBe(true);
+    expect(k({ metaKey: true, isComposing: true })).toBe(false);
+  });
+  it("Escape leaves a text box unless an IME is composing", () => {
+    expect(shouldLeaveOnEscape({ key: "Escape", isComposing: false })).toBe(true);
+    expect(shouldLeaveOnEscape({ key: "Escape", isComposing: true })).toBe(false);
+    expect(shouldLeaveOnEscape({ key: "Enter", isComposing: false })).toBe(false);
+  });
+  it("a bare / focuses the main text box only when typing is not already going somewhere", () => {
+    const f = (over: Partial<Parameters<typeof isFocusShortcut>[0]>) => isFocusShortcut({ key: "/", inEditable: false, metaKey: false, ctrlKey: false, altKey: false, ...over });
+    expect(f({})).toBe(true);
+    expect(f({ inEditable: true })).toBe(false); // typing a slash into a message
+    expect(f({ metaKey: true })).toBe(false);
+    expect(f({ ctrlKey: true })).toBe(false);
+    expect(f({ key: "?" })).toBe(false);
   });
 });

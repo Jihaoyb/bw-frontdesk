@@ -84,6 +84,19 @@ export async function getKnowledgeEntries(sessionId: string, entryIds: readonly 
   return out;
 }
 
+/**
+ * Every entry a staff request in this session points at (its known policy or
+ * its knowledge draft), keyed by entry id. One query that needs no request list
+ * first (issue 015), so a page can read it alongside the requests themselves.
+ */
+export async function listRequestKnowledge(sessionId: string): Promise<Map<string, KnowledgeEntry>> {
+  const res = await getPool().query<Row>(
+    `SELECT ${COLUMNS} FROM knowledge_entries k WHERE k.session_id = $1 AND EXISTS (
+       SELECT 1 FROM staff_requests r WHERE r.session_id = k.session_id AND k.id IN (r.known_policy_entry_id, r.knowledge_draft_entry_id))`,
+    [sessionId]);
+  return new Map(res.rows.map((r) => [r.id, toEntry(r)]));
+}
+
 // ---- Issue 006: create, edit, publish. Nothing here touches other sessions. ----
 
 export type KnowledgeInput = { title: string; policyText: string };
