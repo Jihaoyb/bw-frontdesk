@@ -125,6 +125,9 @@ export type AskResult =
   | { status: "limited"; inquiry: Inquiry; scope: "session" | "daily"; usage: UsageSnapshot }
   | { status: "pending"; inquiry: Inquiry };
 
+/** Durations only: never include questions, policy text, or session identifiers. */
+export type AskTimings = Partial<Record<"claim" | "grounding" | "model" | "persist", number>>;
+
 /**
  * Ask the front desk. Idempotent on (session, submissionId):
  *  - a retry after a lost response returns the saved outcome without a second model call;
@@ -132,7 +135,7 @@ export type AskResult =
  * Allowance is consumed only when the model is actually dispatched.
  */
 export async function askFrontDesk(
-  sessionId: string, input: { conversationId?: string; submissionId: string; question: string; usageDay?: string },
+  sessionId: string, input: { conversationId?: string; submissionId: string; question: string; usageDay?: string; timings?: AskTimings },
 ): Promise<AskResult> {
   if (!UUID_RE.test(sessionId)) throw new Error("invalid session id");
   if (!validateSubmissionId(input.submissionId)) throw new Error("invalid submission id");
@@ -140,7 +143,9 @@ export async function askFrontDesk(
   if (!v.ok) throw new Error(`invalid question: ${v.error.reason}`);
 
   // 1. Claim or find the inquiry and save the parent's message once.
+  let started = performance.now();
   const inquiry = await claimInquiry(sessionId, input.submissionId, v.question, input.conversationId);
+  if (input.timings) input.timings.claim = performance.now() - started;
   if (inquiry.requestId) {
     const request = await getRequest(sessionId, inquiry.requestId);
     if (request) return { status: "staff_requested", inquiry, request, usage: null };
@@ -153,18 +158,25 @@ export async function askFrontDesk(
   if (greeting) return persistResult(sessionId, inquiry, { kind: "chat", text: greeting, contactStaff: false }, null);
 
   // 2. Allowance before dispatch. Rejections consume nothing and are not model failures.
+  started = performance.now();
   const allowancePromise = consumeAllowance(sessionId, input.usageDay ? { day: input.usageDay } : {});
   // 3. Grounding: published knowledge only (drafts excluded by the query), plus recent parent/front-desk turns.
   // Read alongside the reservation (issue 015): a rejection wastes two reads, never a model call.
   const [allowance, knowledge, turns] = await Promise.all([allowancePromise, listPublishedKnowledge(sessionId), recentTurns(sessionId, inquiry.questionMessageId)]);
+  if (input.timings) input.timings.grounding = performance.now() - started;
   if (!allowance.ok) {
     const updated = await setOutcome(sessionId, inquiry.id, "failed", `allowance_${allowance.scope}`);
     return { status: "limited", inquiry: updated, scope: allowance.scope, usage: allowance.usage };
   }
+  started = performance.now();
   const result = await answerQuestion({ question: inquiry.question, knowledge, turns });
+  if (input.timings) input.timings.model = performance.now() - started;
 
   // 4. Persist the outcome with its evidence.
-  return persistResult(sessionId, inquiry, result, allowance.usage);
+  started = performance.now();
+  const saved = await persistResult(sessionId, inquiry, result, allowance.usage);
+  if (input.timings) input.timings.persist = performance.now() - started;
+  return saved;
 }
 
 type Claimed = Inquiry & { fresh: boolean };
@@ -174,10 +186,7 @@ async function claimInquiry(sessionId: string, submissionId: string, question: s
   try {
     await client.query("BEGIN");
     await client.query("SELECT id FROM demo_sessions WHERE id = $1 FOR UPDATE", [sessionId]);
-    const prior = await client.query("SELECT id FROM inquiries WHERE session_id = $1 AND submission_id = $2", [sessionId, submissionId]);
-    const active = await getOrCreateConversation(sessionId, client);
-    if (!prior.rowCount && expectedConversation && expectedConversation !== active) throw new Error("conversation_changed");
-    const result = await claimInquiryWithClient(client, sessionId, submissionId, question);
+    const result = await claimInquiryWithClient(client, sessionId, submissionId, question, expectedConversation);
     await client.query("COMMIT");
     return result;
   } catch (error) {
@@ -186,7 +195,7 @@ async function claimInquiry(sessionId: string, submissionId: string, question: s
   } finally { client.release(); }
 }
 
-async function claimInquiryWithClient(client: PoolClient, sessionId: string, submissionId: string, question: string): Promise<Claimed> {
+async function claimInquiryWithClient(client: PoolClient, sessionId: string, submissionId: string, question: string, expectedConversation?: string): Promise<Claimed> {
   // One statement for the common case: insert the inquiry and its parent
   // message, linked by ids generated here (a statement cannot read rows its
   // own CTEs inserted, so the link cannot be an UPDATE). A duplicate
@@ -194,21 +203,26 @@ async function claimInquiryWithClient(client: PoolClient, sessionId: string, sub
   const inquiryId = randomUUID();
   const messageId = randomUUID();
   const claimSql = `
-    WITH conv AS (SELECT id FROM conversations WHERE session_id = $1 AND is_active),
+    WITH conv AS (SELECT id FROM conversations WHERE session_id = $1 AND is_active
+                 AND ($6::uuid IS NULL OR id = $6::uuid)),
          q AS (INSERT INTO inquiries (id, session_id, conversation_id, submission_id, question, outcome, question_message_id)
                SELECT $4, $1, conv.id, $2, $3, 'pending', $5 FROM conv
                ON CONFLICT (session_id, submission_id) DO NOTHING RETURNING ${COLS}),
          m AS (INSERT INTO messages (id, session_id, conversation_id, speaker, body)
                SELECT $5, $1, q.conversation_id, 'parent', $3 FROM q RETURNING id)
     SELECT ${COLS} FROM q`;
-  const params = [sessionId, submissionId, question, inquiryId, messageId];
+  // The session lock still serializes restart/claim. Check the active chat in
+  // the insert itself, saving two network round trips on every new question.
+  // Duplicate submissions fall through to their original saved inquiry.
+  const params = [sessionId, submissionId, question, inquiryId, messageId, expectedConversation ?? null];
   let claimed = await client.query<InquiryRow>(claimSql, params);
   if (!claimed.rowCount) {
     const existing = await client.query<InquiryRow>(
       `SELECT ${COLS} FROM inquiries WHERE session_id = $1 AND submission_id = $2`, [sessionId, submissionId]);
     if (!existing.rows[0]) {
       // No conversation yet (session predates seeding one): create it, claim again.
-      await getOrCreateConversation(sessionId, client);
+      const active = await getOrCreateConversation(sessionId, client);
+      if (expectedConversation && expectedConversation !== active) throw new Error("conversation_changed");
       claimed = await client.query<InquiryRow>(claimSql, params);
       if (claimed.rows[0]) return { ...toInquiry(claimed.rows[0]), fresh: true };
       const raced = await client.query<InquiryRow>(`SELECT ${COLS} FROM inquiries WHERE session_id = $1 AND submission_id = $2`, [sessionId, submissionId]);

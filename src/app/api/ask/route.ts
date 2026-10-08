@@ -2,7 +2,7 @@ import { smallTalkReply } from "@/lib/small-talk";
 import { NextResponse, type NextRequest } from "next/server";
 import { SESSION_HEADER } from "@/lib/center-config";
 import { AI_ANSWERS_ENABLED } from "@/lib/limits";
-import { askFrontDesk } from "@/lib/inquiries";
+import { askFrontDesk, type AskTimings } from "@/lib/inquiries";
 import { validateQuestion, validateSubmissionId } from "@/lib/requests";
 import { ensureSession, isSessionId } from "@/lib/session";
 
@@ -34,19 +34,27 @@ export async function POST(req: NextRequest) {
   if (!AI_ANSWERS_ENABLED && !smallTalkReply(v.question)) return NextResponse.json({ status: "disabled" }, { status: 503 });
 
   try {
+  const started = performance.now();
   await ensureSession(sessionId);
-  const result = await askFrontDesk(sessionId, { conversationId: conversationId as string | undefined, submissionId, question: v.question });
+  const sessionMs = performance.now() - started;
+  const timings: AskTimings = {};
+  const result = await askFrontDesk(sessionId, { conversationId: conversationId as string | undefined, submissionId, question: v.question, timings });
+  const serverTiming = Object.entries({ session: sessionMs, ...timings, total: performance.now() - started })
+    .map(([name, ms]) => `${name};dur=${ms.toFixed(1)}`).join(", ");
+  function json(body: unknown, init: { status?: number } = {}) {
+    return NextResponse.json(body, { ...init, headers: { "Server-Timing": serverTiming } });
+  }
   switch (result.status) {
     case "limited":
-      return NextResponse.json({ status: "limited", scope: result.scope, usage: result.usage }, { status: 429 });
+      return json({ status: "limited", scope: result.scope, usage: result.usage }, { status: 429 });
     case "failed":
-      return NextResponse.json({ status: "failed", reason: result.reason, inquiryId: result.inquiry.id, usage: result.usage }, { status: 200 });
+      return json({ status: "failed", reason: result.reason, inquiryId: result.inquiry.id, usage: result.usage }, { status: 200 });
     case "pending":
-      return NextResponse.json({ status: "pending", inquiryId: result.inquiry.id }, { status: 202 });
+      return json({ status: "pending", inquiryId: result.inquiry.id }, { status: 202 });
     case "staff_requested":
-      return NextResponse.json({ status: "staff_requested", inquiryId: result.inquiry.id, request: { id: result.request.id, status: result.request.status }, usage: result.usage });
+      return json({ status: "staff_requested", inquiryId: result.inquiry.id, request: { id: result.request.id, status: result.request.status }, usage: result.usage });
     default:
-      return NextResponse.json({
+      return json({
         status: result.status,
         inquiryId: result.inquiry.id,
         questionMessageId: result.inquiry.questionMessageId,
