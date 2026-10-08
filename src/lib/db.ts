@@ -6,11 +6,16 @@ declare global {
 }
 
 function createPool(): Pool {
-  const connectionString = process.env.DATABASE_URL;
-  if (!connectionString) throw new Error("DATABASE_URL is not configured");
+  const raw = process.env.DATABASE_URL;
+  if (!raw) throw new Error("DATABASE_URL is not configured");
+  // TLS is set here, not by the URL: pg 8 warns that `sslmode=require` in a
+  // connection string will change meaning in pg 9, so the parameter is dropped
+  // and the certificate is verified explicitly (Neon's chain is publicly signed).
+  const url = new URL(raw);
+  url.searchParams.delete("sslmode");
   const pool = new Pool({
-    connectionString,
-    ssl: { rejectUnauthorized: false },
+    connectionString: url.toString(),
+    ssl: { rejectUnauthorized: true },
     max: 5,
     // Neon's pooler drops idle connections; recycle ours first so a request
     // never picks up a dead socket ("Connection terminated unexpectedly").
