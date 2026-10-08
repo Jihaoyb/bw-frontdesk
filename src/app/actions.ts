@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { openKnowledgeDraftForRequest } from "@/lib/knowledge-loop";
 import { createKnowledgeDraft, publishKnowledge, saveKnowledgeDraft, type KnowledgeWriteError } from "@/lib/knowledge";
 import { getActiveSession } from "@/lib/request-session";
 import { resetSessionContent } from "@/lib/session";
@@ -90,4 +91,28 @@ export async function publishKnowledgeAction(formData: FormData): Promise<void> 
   const saved = await saveKnowledgeDraft(session.id, entryId, { title: String(formData.get("title") ?? ""), policyText: String(formData.get("policyText") ?? "") });
   if (!saved.ok) backToKnowledge(saved, "published");
   backToKnowledge(await publishKnowledge(session.id, entryId), "published");
+}
+
+// ---- Issue 007: reply-to-knowledge loop. Opening a draft publishes nothing and changes no request status. ----
+
+export type OpenDraftActionResult = { ok: true; entryId: string; href: string } | { ok: false; error: string };
+
+export async function openKnowledgeDraftAction(requestId: string, suggestedText?: string | null): Promise<OpenDraftActionResult> {
+  const session = await getActiveSession();
+  const result = await openKnowledgeDraftForRequest(session.id, requestId, suggestedText);
+  if (!result.ok) {
+    return {
+      ok: false,
+      error: result.error === "sensitive" ? "Sensitive requests do not get a knowledge draft." : result.error === "not_found" ? errorCopy.not_found : "Could not open a draft.",
+    };
+  }
+  revalidatePath("/", "layout");
+  return { ok: true, entryId: result.entry.id, href: `/operator?saved=${result.entry.id}#entry-${result.entry.id}` };
+}
+
+/** Plain-form variant used on the request page when no reply text is involved. */
+export async function openKnowledgeDraftFormAction(formData: FormData): Promise<void> {
+  const requestId = String(formData.get("requestId") ?? "");
+  const result = await openKnowledgeDraftAction(requestId, null);
+  redirect(result.ok ? result.href : `/operator/inbox/${requestId}?error=${encodeURIComponent(result.error)}`);
 }

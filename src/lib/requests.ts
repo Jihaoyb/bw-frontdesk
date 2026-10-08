@@ -19,6 +19,8 @@ export type StaffRequest = {
   origin: RequestOrigin;
   status: RequestStatus;
   knownPolicyEntryId: string | null;
+  /** Knowledge draft opened from this request (issue 007); null until an operator opens one. */
+  knowledgeDraftEntryId: string | null;
   createdAt: Date;
   reviewedAt: Date | null;
   closedAt: Date | null;
@@ -59,15 +61,15 @@ export function validateSubmissionId(raw: unknown): raw is string {
 type RequestRow = {
   id: string; session_id: string; conversation_id: string; question_message_id: string | null;
   submission_id: string; question: string; origin: RequestOrigin; status: RequestStatus;
-  known_policy_entry_id: string | null; created_at: Date; reviewed_at: Date | null; closed_at: Date | null; updated_at: Date;
+  known_policy_entry_id: string | null; knowledge_draft_entry_id: string | null; created_at: Date; reviewed_at: Date | null; closed_at: Date | null; updated_at: Date;
 };
 const toRequest = (r: RequestRow): StaffRequest => ({
   id: r.id, sessionId: r.session_id, conversationId: r.conversation_id, questionMessageId: r.question_message_id,
   submissionId: r.submission_id, question: r.question, origin: r.origin, status: r.status,
-  knownPolicyEntryId: r.known_policy_entry_id, createdAt: r.created_at,
+  knownPolicyEntryId: r.known_policy_entry_id, knowledgeDraftEntryId: r.knowledge_draft_entry_id, createdAt: r.created_at,
   reviewedAt: r.reviewed_at, closedAt: r.closed_at, updatedAt: r.updated_at,
 });
-const REQUEST_COLS = "id, session_id, conversation_id, question_message_id, submission_id, question, origin, status, known_policy_entry_id, created_at, reviewed_at, closed_at, updated_at";
+const REQUEST_COLS = "id, session_id, conversation_id, question_message_id, submission_id, question, origin, status, known_policy_entry_id, knowledge_draft_entry_id, created_at, reviewed_at, closed_at, updated_at";
 
 type MessageRow = { id: string; conversation_id: string; request_id: string | null; speaker: Message["speaker"]; staff_name: string | null; body: string; created_at: Date };
 const toMessage = (r: MessageRow): Message => ({

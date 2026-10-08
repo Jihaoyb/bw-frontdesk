@@ -4,6 +4,7 @@ import { OutcomePill } from "@/components/outcome-pill";
 import { PerspectiveNav } from "@/components/perspective-nav";
 import { StatusPill, originLabel } from "@/components/request-card";
 import { listInquiries } from "@/lib/inquiries";
+import { draftEntriesForRequests, gapLabel, knowledgeGapState } from "@/lib/knowledge-loop";
 import { listRequests } from "@/lib/requests";
 import { getActiveSession } from "@/lib/request-session";
 
@@ -12,6 +13,7 @@ export const dynamic = "force-dynamic";
 export default async function InboxPage() {
   const session = await getActiveSession();
   const [requests, inquiries] = await Promise.all([listRequests(session.id), listInquiries(session.id)]);
+  const drafts = await draftEntriesForRequests(session.id, requests);
   const open = requests.filter((r) => r.status !== "closed").length;
   return (
     <>
@@ -31,6 +33,12 @@ export default async function InboxPage() {
                   <div className="flex flex-wrap items-center gap-2 text-xs">
                     <StatusPill status={r.status} />
                     <span className={"pill " + (r.origin === "sensitive" ? "bg-red-50 text-red-900 ring-1 ring-red-200" : "bg-stone-100 text-stone-600")} data-origin={r.origin}>{originLabel[r.origin]}</span>
+                    {(() => {
+                      const gap = knowledgeGapState(r, drafts.get(r.id) ?? null);
+                      if (gap === "none") return null;
+                      const tone = gap === "published" ? "bg-emerald-50 text-emerald-900" : gap === "draft" ? "bg-amber-50 text-amber-900" : "bg-stone-100 text-stone-600";
+                      return <span className={"pill " + tone} data-gap={gap}>{gapLabel[gap]}</span>;
+                    })()}
                     <span className="ml-auto text-stone-500">{messageTime.format(r.createdAt)}</span>
                   </div>
                   <p className="mt-2 line-clamp-2 whitespace-pre-wrap font-medium">{r.question}</p>
