@@ -4,6 +4,7 @@ import { OutcomePill } from "@/components/outcome-pill";
 import { PerspectiveNav } from "@/components/perspective-nav";
 import { StatusPill, originLabel } from "@/components/request-card";
 import { listInquiries } from "@/lib/inquiries";
+import { matchCount, matchingCounts } from "@/lib/matching";
 import { draftEntriesForRequests, gapLabel, knowledgeGapState } from "@/lib/knowledge-loop";
 import { listRequests } from "@/lib/requests";
 import { getActiveSession } from "@/lib/request-session";
@@ -14,6 +15,7 @@ export default async function InboxPage() {
   const session = await getActiveSession();
   const [requests, inquiries] = await Promise.all([listRequests(session.id), listInquiries(session.id)]);
   const drafts = await draftEntriesForRequests(session.id, requests);
+  const counts = matchingCounts(inquiries); // this session only; resets with its content
   const open = requests.filter((r) => r.status !== "closed").length;
   return (
     <>
@@ -53,7 +55,10 @@ export default async function InboxPage() {
             <h2 id="history" className="text-base font-semibold tracking-tight">Question history</h2>
             <p className="text-xs text-stone-500">{inquiries.length} question{inquiries.length === 1 ? "" : "s"}</p>
           </div>
-          <p className="mt-1 text-xs text-stone-500">Every parent question in this demo session and how the front desk handled it.</p>
+          <p className="mt-1 text-xs text-stone-500">
+            Every parent question in this demo session and how the front desk handled it. A count marks normalized matching questions: the same wording
+            ignoring capitalization, spacing, and punctuation. Different wording is not grouped, and matching requests stay separate.
+          </p>
           {inquiries.length === 0 && <p className="card mt-3 p-4 text-sm text-stone-500">No questions yet.</p>}
           <ul className="card mt-3 divide-y divide-stone-100">
             {inquiries.map((q) => (
@@ -62,6 +67,9 @@ export default async function InboxPage() {
                   <p className="line-clamp-2 whitespace-pre-wrap">{q.question}</p>
                   <p className="mt-1 text-xs text-stone-500">
                     {messageTime.format(q.createdAt)}
+                    {matchCount(counts, q) > 1 && (
+                      <> · <span className="pill bg-stone-100 text-stone-700" data-matching={matchCount(counts, q)}>{matchCount(counts, q)} normalized matching questions</span></>
+                    )}
                     {q.requestId && <> · <Link href={`/operator/inbox/${q.requestId}`} className="underline decoration-stone-300 underline-offset-2">open request</Link></>}
                   </p>
                 </div>
