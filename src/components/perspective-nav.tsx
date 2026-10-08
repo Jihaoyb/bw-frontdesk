@@ -1,4 +1,4 @@
-import Link from "next/link";
+import { NavigationLink as Link } from "./navigation-link";
 import { centerConfig } from "@/lib/center-config";
 import { SectionTabs } from "./section-tabs";
 

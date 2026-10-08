@@ -1,7 +1,7 @@
 import { PerspectiveNav } from "@/components/perspective-nav";
 
-// Issue 015: the header is part of the layout, so it stays mounted while a
-// page in this perspective loads and the loading frame renders beneath it.
+// The header stays mounted across operator routes. No route-wide loading
+// fallback: transitions retain the current content and links show pending feedback.
 export default function OperatorLayout({ children }: { children: React.ReactNode }) {
   return (
     <>

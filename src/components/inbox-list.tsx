@@ -1,4 +1,4 @@
-import Link from "next/link";
+import { NavigationLink as Link } from "./navigation-link";
 import type { KnowledgeEntry } from '@/lib/knowledge';
 import type { Inquiry } from '@/lib/inquiries';
 import { inboxItems } from '@/lib/inbox';

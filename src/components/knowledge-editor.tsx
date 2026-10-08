@@ -1,4 +1,4 @@
-import Link from "next/link";
+import { NavigationLink as Link } from "./navigation-link";
 import { handbookCategories, type HandbookCategory } from "@/lib/handbook-categories";
 import { GrowingTextarea } from "./growing-textarea";
 import type { KnowledgeEntry } from "@/lib/knowledge";
