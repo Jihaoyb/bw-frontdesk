@@ -1,15 +1,15 @@
 # AI Front Desk
 
-*Design draft — update against the working prototype before submission.*
+*Verified against the hosted prototype on October 7, 2026: https://bw-frontdesk.vercel.app*
 
-Parents need quick, trustworthy answers. Staff need fewer repeated questions. This prototype is designed for enrolled families at a fictional childcare center, focusing on everyday questions about closures, illness policies, and meals.
+Parents need quick, trustworthy answers. Staff need fewer repeated questions. This prototype is an AI front desk for enrolled families at a fictional childcare center, covering everyday questions about closures, illness rules, meals, tuition, and tours.
 
-The front desk will answer from staff-published policies and show the supporting text. When information is missing or a request needs staff confirmation, parents can ask staff without repeating their question. A request card inside the conversation separates what the handbook says from what staff still needs to confirm. Saving a request never implies that a service has been approved.
+The front desk answers only from staff-published policies and attaches the exact text it relied on; that evidence is a snapshot, so an old answer still shows what it cited even after the policy changes. When the policies do not settle a question, or a request needs a staff decision (a same-day lunch, a pickup exception), the assistant says what the policy covers and offers Ask staff. A request card in the conversation separates the known policy from what still needs staff, and nothing in the UI implies a reservation, an approval, or a reply deadline. Sensitive matters (an incident, a custody change, a billing dispute, a staff complaint) are never answered from policy; they go straight to staff and are flagged in the inbox.
 
-Staff will reply in the same conversation and explicitly publish useful policy updates. That creates the central improvement loop: a question reveals a gap, staff fills it, and the next family gets an immediate answer. Staff can also maintain policies directly.
+Staff reply in the same conversation and track progress (reviewing, needs your reply, closed, reopen). A reply alone never changes future answers: the request keeps a visible "knowledge gap open" state until an operator opens a draft, reviews it, and explicitly publishes. That is the central loop, verified end to end on the hosted app: "Are you open on Veterans Day?" is a handoff, staff reply, the same question is still a handoff, staff publish the updated closure list, and the next ask is a sourced answer. Operators can also create and edit knowledge directly; drafts persist but stay out of the policy browser and the AI until published.
 
-The planned architecture uses a Next.js application on Vercel, OpenAI GPT-6 Luna for grounded responses, and Neon PostgreSQL for policies, conversations, and requests. Each reviewer gets isolated fictional data and can switch between Parent and Operator views to try the complete loop.
+Architecture: one Next.js app on Vercel, Neon PostgreSQL for policies, drafts, conversations, requests, evidence snapshots and usage counters, and OpenAI GPT-6 Luna through the Responses API with a strict JSON schema; the server validates every result and source id before anything is shown. Each browser gets an isolated, resettable demo session; the Parent/Operator switch is a reviewer convenience. AI usage is capped at 50 per session and 500 per day on the server; policy browsing and staff messaging keep working when the cap is hit, and a failed model call keeps the question and offers retry, policies, or staff.
 
-The three-hour scope prioritizes trustworthy answers, clear staff follow-up, and explicit knowledge publication. Live staff presence, email/SMS notifications, and document ingestion are deferred. A parent-selected decision time is optional; it would record when an answer is needed without promising a response deadline.
+Deferred on purpose: live staff presence, email/SMS delivery, document ingestion, real authentication, and the optional parent decision time (issue 010, not implemented). Known limit: grounding quality is checked on a small live sample per behavior class, not measured as a success rate.
 
-[Architecture diagram (SVG)](architecture.svg) · [PNG](architecture.png)
+[Architecture diagram (SVG)](architecture.svg) · [PNG](architecture.png) · [Detailed](architecture-detailed.svg)

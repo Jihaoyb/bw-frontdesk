@@ -1,6 +1,6 @@
 # Prototype acceptance checks
 
-These checks capture the agreed implementation baseline. The design interview was completed on October 7, 2026; the checks have not yet been executed against an application.
+These checks capture the agreed implementation baseline. Executed on October 7, 2026 against the hosted app (issue 009); results are recorded in `issues/009-hosted-verification-and-submission-materials.md`. Checks 1–10 and 12–15 passed on the hosted app or in the deterministic suite; check 11 (mobile hand-held walkthrough) awaits human sign-off.
 
 1. A routine handbook question gets a concise AI answer with an inspectable published source and no staff request.
 2. A missing-policy question offers Ask staff. The resulting request retains the conversation and appears in the same demo's operator inbox only after successful saving.

@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1440" height="960" viewBox="0 0 1440 960" role="img" aria-labelledby="title desc">
-  <title id="title">AI Front Desk — planned architecture</title>
-  <desc id="desc">Parent and operator views share a Next.js server on Vercel. The server stores isolated demo data in Neon PostgreSQL and calls OpenAI GPT-6 Luna with published policies. Staff replies remain separate from explicitly published knowledge. All components represent the agreed design, not a deployed system.</desc>
+  <title id="title">AI Front Desk — implemented architecture</title>
+  <desc id="desc">Parent and operator views share a Next.js server on Vercel. The server stores isolated demo data in Neon PostgreSQL and calls OpenAI GPT-6 Luna with published policies. Staff replies remain separate from explicitly published knowledge. All components are implemented and were verified on the hosted demo in October 2026.</desc>
   <defs>
     <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#587477"/></marker>
     <style>
@@ -18,7 +18,7 @@
   <text x="64" y="68" class="title">AI Front Desk</text>
   <text x="64" y="105" class="body" fill="#4c686b">Fast policy answers. Clear staff follow-up. Better knowledge over time.</text>
   <rect x="1113" y="37" width="263" height="43" rx="21" fill="#e4eeeb"/>
-  <text x="1245" y="65" text-anchor="middle" class="label">PLANNED ARCHITECTURE</text>
+  <text x="1245" y="65" text-anchor="middle" class="label">VERIFIED PROTOTYPE · OCT 2026</text>
 
   <rect x="64" y="142" width="1312" height="387" rx="24" fill="#edf4f1" stroke="#cadbd6"/>
   <text x="90" y="177" class="label">ONE NEXT.JS APPLICATION · HOSTED ON VERCEL</text>
@@ -56,11 +56,11 @@
   <rect x="750" y="602" width="596" height="173" rx="18" fill="#fff" stroke="#c4d6d2"/>
   <text x="776" y="643" class="heading">OpenAI · GPT-6 Luna</text>
   <text x="776" y="679" class="body">Responses API with structured outputs</text>
-  <text x="776" y="710" class="body">Answer with sources · clarify · suggest handoff</text>
+  <text x="776" y="710" class="body">Answer with sources · clarify · handoff · sensitive</text>
   <text x="776" y="748" class="small">The server controls actions; the model has no DB access.</text>
 
   <rect x="64" y="811" width="1312" height="86" rx="18" fill="#dceee5"/>
   <text x="90" y="845" class="label">THE IMPROVEMENT LOOP</text>
   <text x="90" y="877" class="body">Question exposes a gap → staff publishes an update → the next family gets a grounded answer</text>
-  <text x="64" y="932" class="small">Design scope: fictional data · asynchronous staff replies · optional decision time · no email/SMS delivery</text>
+  <text x="64" y="932" class="small">Scope: fictional data · asynchronous staff replies · no email/SMS delivery · decision time (issue 010) not implemented</text>
 </svg>

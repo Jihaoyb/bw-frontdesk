@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1120" height="850" viewBox="0 0 1120 850" role="img" aria-labelledby="title desc">
 <title id="title">AI Front Desk — architecture overview</title>
-<desc id="desc">Planned architecture. Parent and operator views use a Next.js server on Vercel. The server reads and writes policies, conversations and requests in Neon PostgreSQL and calls OpenAI GPT-6 Luna. Response and source validation leads to a cited answer, clarification, or an offer to ask staff. Staff replies stay in the conversation; reusable knowledge requires explicit review and publication.</desc>
+<desc id="desc">Implemented architecture, verified on the hosted demo in October 2026. Parent and operator views use a Next.js server on Vercel. The server reads and writes policies, conversations and requests in Neon PostgreSQL and calls OpenAI GPT-6 Luna. Response and source validation leads to a cited answer, clarification, or an offer to ask staff. Staff replies stay in the conversation; reusable knowledge requires explicit review and publication.</desc>
 <defs>
  <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#859396"/></marker>
  <marker id="teal" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#27877b"/></marker>
@@ -14,7 +14,7 @@
 <rect width="1120" height="850" fill="#fff"/>
 <text x="48" y="57" style="text-anchor:start;font-size:32px;font-weight:700">AI Front Desk</text>
 <text x="48" y="89" class="sub" style="text-anchor:start">Grounded answers → staff follow-up → better knowledge</text>
-<text x="1072" y="57" class="label" style="text-anchor:end;letter-spacing:1px">PLANNED ARCHITECTURE</text>
+<text x="1072" y="57" class="label" style="text-anchor:end;letter-spacing:1px">VERIFIED PROTOTYPE · OCT 2026</text>
 
 <!-- Parent and operator use the same application server. -->
 <rect x="48" y="142" width="270" height="88" rx="12" fill="#f5f4f0" stroke="#c8cac4"/>
@@ -22,7 +22,7 @@
 <text x="183" y="207" class="sub">Ask · read answers · follow up</text>
 <rect x="414" y="142" width="292" height="88" rx="12" fill="#eeedff" stroke="#b5b0ec"/>
 <text x="560" y="179" class="head">Next.js server</text>
-<text x="560" y="207" class="sub">Vercel · server-side API calls</text>
+<text x="560" y="207" class="sub">Vercel · server-side model + DB</text>
 <rect x="802" y="142" width="270" height="88" rx="12" fill="#f5f4f0" stroke="#c8cac4"/>
 <text x="937" y="179" class="head">Operator view</text>
 <text x="937" y="207" class="sub">Reply · manage knowledge</text>
@@ -32,8 +32,8 @@
 <!-- Database access remains on the server; publishing is explicit. -->
 <rect x="802" y="341" width="270" height="105" rx="12" fill="#e4f5ef" stroke="#8ac5b8"/>
 <text x="937" y="376" class="head">Neon PostgreSQL</text>
-<text x="937" y="404" class="sub">Published policies</text>
-<text x="937" y="429" class="sub">Conversations · requests</text>
+<text x="937" y="404" class="sub">Published policies · drafts</text>
+<text x="937" y="429" class="sub">Conversations · requests · usage</text>
 <path d="M716 208H755V393H792" class="line both"/>
 <text x="756" y="474" class="label">Server reads / writes</text>
 <path d="M937 240V331" class="loop"/>
@@ -62,7 +62,7 @@
 <text x="560" y="745" class="sub">Ask for missing details</text>
 <rect x="802" y="680" width="270" height="88" rx="12" fill="#fff2dd" stroke="#d8b579"/>
 <text x="937" y="717" class="head">Ask staff</text>
-<text x="937" y="745" class="sub">Request in this conversation</text>
+<text x="937" y="745" class="sub">Handoff or sensitive request</text>
 
 <path d="M1080 724H1101V186H1082" class="line" stroke-dasharray="5 5"/>
 <text x="1090" y="550" class="label" transform="rotate(-90 1090 550)">Staff follow-up</text>
