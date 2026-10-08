@@ -1,6 +1,7 @@
 import type { PoolClient } from "pg";
 import { getPool } from "./db";
 import { MAX_QUESTION_CHARS } from "./limits";
+import { centerConfig } from "./center-config";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -18,16 +19,26 @@ export type StaffRequest = {
   status: RequestStatus;
   knownPolicyEntryId: string | null;
   createdAt: Date;
+  reviewedAt: Date | null;
+  closedAt: Date | null;
+  updatedAt: Date;
 };
 
 export type Message = {
   id: string;
   conversationId: string;
+  requestId: string | null;
   speaker: "parent" | "assistant" | "staff";
   staffName: string | null;
   body: string;
   createdAt: Date;
 };
+
+/** Fictional staff names, verbatim from docs/test-inquiries.md via center config. */
+export const STAFF_NAMES: readonly string[] = centerConfig.staff.map((s) => s.name);
+export function isStaffName(raw: unknown): raw is string {
+  return typeof raw === "string" && STAFF_NAMES.includes(raw);
+}
 
 export type ValidationError = { field: "question" | "submissionId"; reason: string };
 
@@ -47,18 +58,19 @@ export function validateSubmissionId(raw: unknown): raw is string {
 type RequestRow = {
   id: string; session_id: string; conversation_id: string; question_message_id: string | null;
   submission_id: string; question: string; origin: RequestOrigin; status: RequestStatus;
-  known_policy_entry_id: string | null; created_at: Date;
+  known_policy_entry_id: string | null; created_at: Date; reviewed_at: Date | null; closed_at: Date | null; updated_at: Date;
 };
 const toRequest = (r: RequestRow): StaffRequest => ({
   id: r.id, sessionId: r.session_id, conversationId: r.conversation_id, questionMessageId: r.question_message_id,
   submissionId: r.submission_id, question: r.question, origin: r.origin, status: r.status,
   knownPolicyEntryId: r.known_policy_entry_id, createdAt: r.created_at,
+  reviewedAt: r.reviewed_at, closedAt: r.closed_at, updatedAt: r.updated_at,
 });
-const REQUEST_COLS = "id, session_id, conversation_id, question_message_id, submission_id, question, origin, status, known_policy_entry_id, created_at";
+const REQUEST_COLS = "id, session_id, conversation_id, question_message_id, submission_id, question, origin, status, known_policy_entry_id, created_at, reviewed_at, closed_at, updated_at";
 
-type MessageRow = { id: string; conversation_id: string; speaker: Message["speaker"]; staff_name: string | null; body: string; created_at: Date };
+type MessageRow = { id: string; conversation_id: string; request_id: string | null; speaker: Message["speaker"]; staff_name: string | null; body: string; created_at: Date };
 const toMessage = (r: MessageRow): Message => ({
-  id: r.id, conversationId: r.conversation_id, speaker: r.speaker, staffName: r.staff_name, body: r.body, createdAt: r.created_at,
+  id: r.id, conversationId: r.conversation_id, requestId: r.request_id, speaker: r.speaker, staffName: r.staff_name, body: r.body, createdAt: r.created_at,
 });
 
 /** The session's single parent conversation for this prototype, created on demand. */
@@ -107,8 +119,8 @@ export async function createStaffRequest(sessionId: string, input: CreateRequest
       return { request: toRequest(existing.rows[0]), created: false };
     }
     const msg = await client.query<{ id: string }>(
-      `INSERT INTO messages (session_id, conversation_id, speaker, body) VALUES ($1, $2, 'parent', $3) RETURNING id`,
-      [sessionId, conversationId, v.question],
+      `INSERT INTO messages (session_id, conversation_id, request_id, speaker, body) VALUES ($1, $2, $3, 'parent', $4) RETURNING id`,
+      [sessionId, conversationId, claimed.rows[0].id, v.question],
     );
     const updated = await client.query<RequestRow>(
       `UPDATE staff_requests SET question_message_id = $1 WHERE id = $2 RETURNING ${REQUEST_COLS}`,
@@ -140,9 +152,130 @@ export async function getRequest(sessionId: string, requestId: string): Promise<
 
 export async function listMessages(sessionId: string): Promise<Message[]> {
   const res = await getPool().query<MessageRow>(
-    `SELECT m.id, m.conversation_id, m.speaker, m.staff_name, m.body, m.created_at
+    `SELECT m.id, m.conversation_id, m.request_id, m.speaker, m.staff_name, m.body, m.created_at
      FROM messages m JOIN conversations c ON c.id = m.conversation_id
      WHERE c.session_id = $1 AND m.session_id = $1
      ORDER BY m.created_at`, [sessionId]);
+  return res.rows.map(toMessage);
+}
+
+// ---- Issue 003: staff/parent exchange and progress transitions ----
+// Every transition is one scoped UPDATE (id AND session_id); a request id from
+// another session matches no row and the action reports not found. None of
+// these publish knowledge or confirm a service; they only move the request.
+
+export type TransitionResult =
+  | { ok: true; request: StaffRequest; message?: Message }
+  | { ok: false; error: "not_found" | "invalid_body" | "invalid_staff_name" };
+
+function scopedUpdate(client: PoolClient | ReturnType<typeof getPool>, sessionId: string, requestId: string, setSql: string, params: unknown[] = []) {
+  return client.query<RequestRow>(
+    `UPDATE staff_requests SET ${setSql}, updated_at = now()
+     WHERE id = $1::uuid AND session_id = $2 RETURNING ${REQUEST_COLS}`,
+    [requestId, sessionId, ...params],
+  );
+}
+
+/** Explicit staff action. Opening the page never calls this. Closed requests stay closed (use reopen). */
+export async function markReviewing(sessionId: string, requestId: string): Promise<TransitionResult> {
+  if (!UUID_RE.test(requestId)) return { ok: false, error: "not_found" };
+  const res = await scopedUpdate(getPool(), sessionId, requestId,
+    `status = CASE WHEN status = 'closed' THEN status ELSE 'staff_reviewing' END,
+     reviewed_at = COALESCE(reviewed_at, now())`);
+  return res.rows[0] ? { ok: true, request: toRequest(res.rows[0]) } : { ok: false, error: "not_found" };
+}
+
+/** Undo for close. No confirmation step; the request is back with staff. */
+export async function reopenRequest(sessionId: string, requestId: string): Promise<TransitionResult> {
+  if (!UUID_RE.test(requestId)) return { ok: false, error: "not_found" };
+  const res = await scopedUpdate(getPool(), sessionId, requestId,
+    `status = CASE WHEN status = 'closed' THEN 'staff_reviewing' ELSE status END, closed_at = NULL`);
+  return res.rows[0] ? { ok: true, request: toRequest(res.rows[0]) } : { ok: false, error: "not_found" };
+}
+
+export type StaffReplyOutcome = "reply" | "needs_your_reply" | "close";
+
+/**
+ * Save a staff message on the request, then move progress by outcome:
+ *   reply            awaiting_review → staff_reviewing; otherwise unchanged
+ *   needs_your_reply → needs_your_reply (reopens if closed)
+ *   close            → closed, closed_at set
+ * A staff reply is a message to this family only; it is not published knowledge.
+ */
+export async function staffReply(
+  sessionId: string, requestId: string, input: { staffName: unknown; body: unknown; outcome: StaffReplyOutcome },
+): Promise<TransitionResult> {
+  if (!UUID_RE.test(requestId)) return { ok: false, error: "not_found" };
+  if (!isStaffName(input.staffName)) return { ok: false, error: "invalid_staff_name" };
+  const v = validateQuestion(input.body);
+  if (!v.ok) return { ok: false, error: "invalid_body" };
+  const statusSql = {
+    reply: `status = CASE WHEN status = 'awaiting_review' THEN 'staff_reviewing' ELSE status END`,
+    needs_your_reply: `status = 'needs_your_reply', closed_at = NULL`,
+    close: `status = 'closed', closed_at = now()`,
+  }[input.outcome];
+  return withRequest(sessionId, requestId, async (client, req) => {
+    const msg = await client.query<MessageRow>(
+      `INSERT INTO messages (session_id, conversation_id, request_id, speaker, staff_name, body)
+       VALUES ($1, $2, $3, 'staff', $4, $5)
+       RETURNING id, conversation_id, request_id, speaker, staff_name, body, created_at`,
+      [sessionId, req.conversation_id, req.id, input.staffName, v.question],
+    );
+    const upd = await scopedUpdate(client, sessionId, requestId, `${statusSql}, reviewed_at = COALESCE(reviewed_at, now())`);
+    return { ok: true, request: toRequest(upd.rows[0]), message: toMessage(msg.rows[0]) };
+  });
+}
+
+/**
+ * Parent adds details under a request. Closed or needs-your-reply requests go
+ * back to awaiting_review; a request staff is already reviewing stays there.
+ */
+export async function parentReply(sessionId: string, requestId: string, body: unknown): Promise<TransitionResult> {
+  if (!UUID_RE.test(requestId)) return { ok: false, error: "not_found" };
+  const v = validateQuestion(body);
+  if (!v.ok) return { ok: false, error: "invalid_body" };
+  return withRequest(sessionId, requestId, async (client, req) => {
+    const msg = await client.query<MessageRow>(
+      `INSERT INTO messages (session_id, conversation_id, request_id, speaker, body)
+       VALUES ($1, $2, $3, 'parent', $4)
+       RETURNING id, conversation_id, request_id, speaker, staff_name, body, created_at`,
+      [sessionId, req.conversation_id, req.id, v.question],
+    );
+    const upd = await scopedUpdate(client, sessionId, requestId,
+      `status = CASE WHEN status IN ('closed', 'needs_your_reply') THEN 'awaiting_review' ELSE status END, closed_at = NULL`);
+    return { ok: true, request: toRequest(upd.rows[0]), message: toMessage(msg.rows[0]) };
+  });
+}
+
+async function withRequest(
+  sessionId: string, requestId: string,
+  fn: (client: PoolClient, req: RequestRow) => Promise<TransitionResult>,
+): Promise<TransitionResult> {
+  const client = await getPool().connect();
+  try {
+    await client.query("BEGIN");
+    const found = await client.query<RequestRow>(
+      `SELECT ${REQUEST_COLS} FROM staff_requests WHERE id = $1::uuid AND session_id = $2 FOR UPDATE`, [requestId, sessionId]);
+    if (!found.rows[0]) {
+      await client.query("ROLLBACK");
+      return { ok: false, error: "not_found" };
+    }
+    const result = await fn(client, found.rows[0]);
+    await client.query("COMMIT");
+    return result;
+  } catch (err) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+/** Messages attached to one request (question, parent details, staff replies), oldest first. Scoped. */
+export async function listRequestMessages(sessionId: string, requestId: string): Promise<Message[]> {
+  if (!UUID_RE.test(requestId)) return [];
+  const res = await getPool().query<MessageRow>(
+    `SELECT id, conversation_id, request_id, speaker, staff_name, body, created_at
+     FROM messages WHERE request_id = $1::uuid AND session_id = $2 ORDER BY created_at`, [requestId, sessionId]);
   return res.rows.map(toMessage);
 }

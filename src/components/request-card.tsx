@@ -34,7 +34,14 @@ export function RequestCard({ request, knownPolicy }: { request: StaffRequest; k
         </div>
         <div>
           <dt className="text-xs uppercase tracking-wide text-stone-500">Staff progress</dt>
-          <dd>{statusLabel[request.status]}. Staff read messages during office hours; nothing is confirmed until staff reply.</dd>
+          <dd>
+            {statusLabel[request.status]}.{" "}
+            {request.status === "closed"
+              ? "Staff closed this request. Replying below reopens it."
+              : request.status === "needs_your_reply"
+                ? "Staff asked you something. Reply below."
+                : "Staff read messages during office hours."}
+          </dd>
         </div>
       </dl>
     </article>

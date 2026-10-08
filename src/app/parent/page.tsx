@@ -1,16 +1,15 @@
 import { AskStaffForm } from "@/components/ask-staff-form";
 import { CenterInfo } from "@/components/center-info";
+import { MessageBubble } from "@/components/message-bubble";
+import { ParentReplyForm } from "@/components/parent-reply-form";
 import { PerspectiveNav } from "@/components/perspective-nav";
 import { RequestCard } from "@/components/request-card";
-import { centerConfig } from "@/lib/center-config";
 import { getKnowledgeEntry } from "@/lib/knowledge";
 import { MAX_QUESTION_CHARS } from "@/lib/limits";
 import { listMessages, listRequests } from "@/lib/requests";
 import { getActiveSession } from "@/lib/request-session";
 
 export const dynamic = "force-dynamic";
-
-const time = new Intl.DateTimeFormat("en-US", { timeZone: centerConfig.timezone, month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 
 export default async function ParentPage() {
   const session = await getActiveSession();
@@ -21,6 +20,12 @@ export default async function ParentPage() {
       requests.filter((r) => r.knownPolicyEntryId).map(async (r) => [r.id, await getKnowledgeEntry(session.id, r.knownPolicyEntryId as string)] as const),
     ),
   );
+  // Follow-ups (parent details, staff replies) render under their request card,
+  // so the exchange reads alongside the original question after a refresh.
+  const followUps = new Map<string, typeof messages>();
+  for (const m of messages) {
+    if (m.requestId && !byMessage.has(m.id)) followUps.set(m.requestId, [...(followUps.get(m.requestId) ?? []), m]);
+  }
 
   return (
     <>
@@ -32,15 +37,17 @@ export default async function ParentPage() {
           <ol className="space-y-3">
             {messages.map((m) => {
               const req = byMessage.get(m.id);
+              if (m.requestId && !req) return null; // rendered under its request below
               return (
                 <li key={m.id} className="space-y-2">
-                  <div className={"rounded-lg p-3 text-sm " + (m.speaker === "parent" ? "bg-stone-900 text-white" : "bg-white border border-stone-200")}>
-                    <p className="whitespace-pre-wrap">{m.body}</p>
-                    <p className={"mt-1 text-xs " + (m.speaker === "parent" ? "text-stone-300" : "text-stone-500")}>
-                      {m.speaker === "parent" ? "You" : m.speaker === "staff" ? m.staffName ?? "Staff" : "Front desk"} · {time.format(m.createdAt)}
-                    </p>
-                  </div>
-                  {req && <RequestCard request={req} knownPolicy={knownPolicies.get(req.id) ?? null} />}
+                  <MessageBubble message={m} viewer="parent" />
+                  {req && (
+                    <div className="space-y-2" data-request={req.id}>
+                      <RequestCard request={req} knownPolicy={knownPolicies.get(req.id) ?? null} />
+                      {(followUps.get(req.id) ?? []).map((f) => <MessageBubble key={f.id} message={f} viewer="parent" />)}
+                      <ParentReplyForm requestId={req.id} maxChars={MAX_QUESTION_CHARS} closed={req.status === "closed"} />
+                    </div>
+                  )}
                 </li>
               );
             })}

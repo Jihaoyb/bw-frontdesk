@@ -1,8 +1,11 @@
 import { notFound } from "next/navigation";
+import { MessageBubble } from "@/components/message-bubble";
 import { PerspectiveNav } from "@/components/perspective-nav";
 import { RequestCard, originLabel } from "@/components/request-card";
+import { StaffReplyPanel } from "@/components/staff-reply-panel";
 import { getKnowledgeEntry } from "@/lib/knowledge";
-import { getRequest } from "@/lib/requests";
+import { MAX_QUESTION_CHARS } from "@/lib/limits";
+import { getRequest, listRequestMessages, STAFF_NAMES } from "@/lib/requests";
 import { getActiveSession } from "@/lib/request-session";
 
 export const dynamic = "force-dynamic";
@@ -13,14 +16,24 @@ export default async function RequestPage({ params }: { params: Promise<{ id: st
   const session = await getActiveSession();
   const request = await getRequest(session.id, id); // scoped: other sessions' ids → null
   if (!request) notFound();
-  const knownPolicy = request.knownPolicyEntryId ? await getKnowledgeEntry(session.id, request.knownPolicyEntryId) : null;
+  const [knownPolicy, messages] = await Promise.all([
+    request.knownPolicyEntryId ? getKnowledgeEntry(session.id, request.knownPolicyEntryId) : null,
+    listRequestMessages(session.id, request.id),
+  ]);
   return (
     <>
       <PerspectiveNav active="operator" current="/operator/inbox" />
       <main className="mx-auto w-full max-w-xl flex-1 space-y-4 px-4 py-4">
         <p className="text-xs text-stone-500">Origin: <span data-origin={request.origin}>{originLabel[request.origin]}</span></p>
         <RequestCard request={request} knownPolicy={knownPolicy} />
-        <p className="text-xs text-stone-500">Review, reply, and close actions arrive in later tickets. Viewing this page records nothing.</p>
+        <section aria-labelledby="thread" className="space-y-2">
+          <h3 id="thread" className="text-sm font-semibold">Messages on this request</h3>
+          <ol className="space-y-2">
+            {messages.map((m) => <li key={m.id}><MessageBubble message={m} viewer="operator" /></li>)}
+          </ol>
+        </section>
+        <StaffReplyPanel requestId={request.id} status={request.status} staffNames={STAFF_NAMES} maxChars={MAX_QUESTION_CHARS} />
+        <p className="text-xs text-stone-500">Viewing this page records nothing. Replies and closing do not publish knowledge.</p>
       </main>
     </>
   );
